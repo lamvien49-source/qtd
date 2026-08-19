@@ -1,8 +1,8 @@
 import * as S from '../../state.js';
 import { pageHeader } from '../../components/shell.js';
 import { openModal } from '../../components/modal.js';
-import { emptyState } from '../../components/ui.js';
-import { formatVND, formatNumber, formatDate, daysUntil } from '../../utils.js';
+import { emptyState, statusBadge } from '../../components/ui.js';
+import { formatVND, formatNumber, formatDate, formatDateTime, daysUntil, initials, colorFor } from '../../utils.js';
 import { openContractView } from './customers.js';
 
 export function renderHeader(headerEl) {
@@ -22,7 +22,6 @@ export function render(contentEl) {
   const nearDue = contracts.filter((c) => S.contractUrgency(c) === 'gan_den_han');
   const overdueTotal = overdue.reduce((s, c) => s + c.balance, 0);
   const nearDueTotal = nearDue.reduce((s, c) => s + c.balance, 0);
-  const newRequests = requests.filter((r) => r.status === 'moi');
 
   const pad2 = (n) => String(n).padStart(2, '0');
 
@@ -32,7 +31,6 @@ export function render(contentEl) {
       <div class="stat-tile c-green"><div class="stat-label">Tổng dư nợ</div><div class="stat-value" style="font-size:15px">${formatVND(totalOutstanding)}</div></div>
       <div class="stat-tile c-pink"><div class="stat-label">Hợp đồng quá hạn</div><div class="stat-value">${formatNumber(overdue.length)}</div></div>
       <div class="stat-tile c-orange"><div class="stat-label">Gần đến hạn</div><div class="stat-value">${formatNumber(nearDue.length)}</div></div>
-      <div class="stat-tile c-purple"><div class="stat-label">Yêu cầu mới</div><div class="stat-value">${formatNumber(newRequests.length)}</div></div>
     </div>
 
     <div class="dash-two-col">
@@ -54,10 +52,19 @@ export function render(contentEl) {
       </div>
       <div class="card card-pad">
         <div class="section-head"><h2>Yêu cầu mới nhất</h2><a href="#/admin/yeu-cau" class="link-more">Xem tất cả</a></div>
-        ${requests.slice(0, 5).map((r) => {
+        ${requests.length ? requests.slice(0, 5).map((r) => {
           const cust = S.getCustomer(r.customerId);
-          return `<div class="table-store-row"><span class="name">${cust ? cust.name : '—'}</span><span class="val">${S.REQUEST_STATUS_MAP[r.status].label}</span></div>`;
-        }).join('') || `<p class="text-sm text-muted">Chưa có yêu cầu nào.</p>`}
+          const typeLabel = S.REQUEST_TYPE.find((t) => t.id === r.type)?.label || '';
+          return `
+          <div class="list-row" style="padding:8px 0">
+            <div class="row-thumb" style="background:${colorFor(r.customerId)}">${initials(cust ? cust.name : '?')}</div>
+            <div class="row-main">
+              <div class="row-title" style="font-size:13.5px">${cust ? cust.name : '—'}</div>
+              <div class="row-sub">${typeLabel} · ${formatDateTime(r.createdAt)}</div>
+            </div>
+            <div class="row-end">${statusBadge(S.REQUEST_STATUS_MAP[r.status])}</div>
+          </div>`;
+        }).join('') : `<p class="text-sm text-muted">Chưa có yêu cầu nào.</p>`}
       </div>
     </div>
   `;

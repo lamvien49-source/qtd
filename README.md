@@ -106,6 +106,10 @@ Nhờ vậy, hợp đồng nào import từ Excel mà đã qua ngày đến hạ
 
 Lãi phát sinh = Số dư × số ngày × lãi suất năm ÷ 365, **làm tròn đến hàng nghìn gần nhất** (VD: 81.500 → 82.000; 81.350 → 81.000). Số ngày tính lãi = số ngày từ "Thu lãi đến ngày" tới hôm nay như bình thường, **trừ trường hợp đặc biệt** "Thu lãi đến ngày" = ngày giải ngân + 1 ngày (quy ước thu lãi ngày đầu ngay lúc giải ngân) thì **cộng thêm 1 ngày** so với cách tính thường (VD: giải ngân 17/08, thu lãi đến ngày 18/08, hôm nay 19/08 → bình thường ra 1 ngày, cộng thêm 1 ngày đặc biệt = 2 ngày tính lãi).
 
+## Tổng quan quản trị
+
+4 ô thống kê đầu trang (Tổng khách hàng, Tổng dư nợ, Hợp đồng quá hạn, Gần đến hạn) xếp đều 1 hàng cân đối — đã bỏ ô "Yêu cầu mới" khỏi hàng này (trước đây có 5 ô nên lệch hàng). Mục **"Yêu cầu mới nhất"** phía dưới vẫn giữ nguyên, hiển thị trực quan hơn: mỗi yêu cầu có ảnh đại diện màu theo tên khách, loại yêu cầu + thời gian gửi, và huy hiệu màu theo trạng thái (Mới/Đang xử lý/Đã liên hệ) — giống hệt kiểu danh sách dùng ở Khách hàng & Hợp đồng và Quản lý User cho nhất quán.
+
 ## Cảnh báo gần đến hạn & Xem tất cả hợp đồng quá hạn
 
 Trang **Tổng quan** (cả quản trị viên và nhân viên) có thêm ô đếm + danh sách **"Gần đến hạn"** — các hợp đồng còn tối đa 15 ngày nữa tới ngày đến hạn (chưa quá hạn), cạnh ô hợp đồng quá hạn, để chủ động nhắc khách trước khi trễ hạn. Cả 2 tiêu đề "Hợp đồng quá hạn" và "Gần đến hạn" đều tô màu (đỏ/cam) kèm số lượng ngay trong tiêu đề (VD: "Hợp đồng quá hạn (05)"), kèm dòng **"Tổng cộng"** cộng dồn số tiền của cả nhóm ngay dưới tiêu đề để theo dõi nhanh không cần cộng tay. Mỗi dòng hợp đồng hiện thẳng **số tiền** (tô màu đỏ/vàng theo nhóm) thay vì nhãn trạng thái hay "Còn N ngày". Mỗi mục chỉ hiện trước 5 hợp đồng gần nhất; bấm **"Xem tất cả"** mở đúng danh sách đầy đủ của riêng mục đó (chỉ hợp đồng quá hạn, hoặc chỉ hợp đồng gần đến hạn — không lẫn lộn với nhau hay với toàn bộ hợp đồng khác) kèm tổng cộng ở đầu danh sách, bấm vào 1 dòng trong danh sách đó để mở thẳng chi tiết hợp đồng luôn. Nhân viên chỉ thấy hợp đồng thuộc Thôn/Xóm được gán, giống mọi số liệu khác trên trang này.
