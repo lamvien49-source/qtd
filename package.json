@@ -1,0 +1,9 @@
+{
+  "name": "qtd-demo-portal",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BẢN DEMO — cổng khách hàng quỹ tín dụng (tra cứu khoản vay, yêu cầu tư vấn) + trang quản trị. Web app thuần HTML/CSS/JS, không cần build. Dữ liệu demo lưu localStorage, CHƯA kết nối backend/database thật — không dùng để vận hành thật.",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
