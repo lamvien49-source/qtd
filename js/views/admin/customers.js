@@ -5,7 +5,7 @@ import { emptyState, statusBadge, openPicker, pillSelectHtml } from '../../compo
 import { openModal, confirmDialog } from '../../components/modal.js';
 import { toast } from '../../components/toast.js';
 import { formatVND, formatDate, daysUntil, maskCccd, colorFor, initials, debounce } from '../../utils.js';
-import { readXlsxFirstSheet, rowsToTsv } from '../../lib/xlsxLite.js';
+import { readExcelFirstSheet, rowsToTsv } from '../../lib/excelLite.js';
 
 export function renderHeader(headerEl) {
   headerEl.innerHTML = pageHeader({ title: 'Khách hàng & Hợp đồng' });
@@ -40,7 +40,7 @@ export function render(contentEl, filterEl) {
       ${!isStaff ? `
       <div class="flex gap-8 mb-8">
         <button class="btn btn-outline btn-sm" id="btn-import">${icon('paperclip', 'icon-sm')} Nhập từ Excel</button>
-        <button class="btn btn-primary btn-sm" id="btn-add">${icon('plus', 'icon-sm')} Thêm khách hàng</button>
+        <button class="btn btn-primary btn-sm" id="btn-add">${icon('plus', 'icon-sm')} Tạo tài khoản khách hàng</button>
       </div>` : `<p class="field-hint mb-8">Tài khoản nhân viên — chỉ xem, không chỉnh sửa được dữ liệu.</p>`}
     </div>
   `;
@@ -95,14 +95,14 @@ export function render(contentEl, filterEl) {
       list = list.filter((c) => S.listContractsByCustomer(c.id).some((ct) => ct.status === 'qua_han'));
     }
     contentEl.innerHTML = `
-      <div class="card card-pad">
-        <div class="text-sm text-muted mb-8">${list.length} khách hàng</div>
-        ${list.length ? list.map((c) => {
-          const contracts = S.listContractsByCustomer(c.id);
-          const total = S.customerOutstandingTotal(c.id);
-          const hasOverdue = contracts.some((ct) => ct.status === 'qua_han');
-          return `
-          <div class="list-row" data-id="${c.id}" style="cursor:pointer">
+      <div class="text-sm text-muted mb-8">${list.length} khách hàng</div>
+      ${list.length ? list.map((c) => {
+        const contracts = S.listContractsByCustomer(c.id);
+        const total = S.customerOutstandingTotal(c.id);
+        const hasOverdue = contracts.some((ct) => ct.status === 'qua_han');
+        return `
+        <div class="card card-pad mb-8">
+          <div class="list-row" data-id="${c.id}" style="cursor:pointer;padding:0">
             <div class="row-thumb" style="background:${colorFor(c.id)}">${initials(c.name)}</div>
             <div class="row-main">
               <div class="row-title">${c.name}${hasOverdue ? ` <span class="badge badge-red">Quá hạn</span>` : ''}</div>
@@ -113,12 +113,23 @@ export function render(contentEl, filterEl) {
               <div class="amount">${formatVND(total)}</div>
               ${c.mustChangePassword ? `<div class="amount-sub" style="color:var(--warning)">Chưa đổi MK</div>` : ''}
             </div>
-          </div>`;
-        }).join('') : emptyState({ iconName: 'users', title: 'Không có khách hàng phù hợp', message: isStaff ? 'Chưa có khách hàng nào ở địa bàn bạn được xem.' : 'Dùng "Nhập từ Excel" hoặc "Thêm khách hàng" để bắt đầu.' })}
-      </div>
+          </div>
+          ${contracts.length ? `
+          <div style="border-top:1px dashed var(--border);margin-top:8px;padding-top:4px">
+            ${contracts.map((ct) => contractRow(ct)).join('')}
+          </div>` : ''}
+        </div>`;
+      }).join('') : emptyState({ iconName: 'users', title: 'Không có khách hàng phù hợp', message: isStaff ? 'Chưa có khách hàng nào ở địa bàn bạn được xem.' : 'Dùng "Nhập từ Excel" hoặc "Tạo tài khoản khách hàng" để bắt đầu.' })}
     `;
     contentEl.querySelectorAll('[data-id]').forEach((row) => {
       row.addEventListener('click', () => openCustomerDetail(row.dataset.id, { readOnly: isStaff }));
+    });
+    contentEl.querySelectorAll('[data-view-contract]').forEach((row) => {
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const customerId = row.dataset.customerId;
+        openContractView(customerId, S.getContract(row.dataset.viewContract), { readOnly: isStaff });
+      });
     });
   }
   draw();
@@ -193,11 +204,10 @@ function openCustomerDetail(customerId, { readOnly = false } = {}) {
       <div class="flex gap-8 mt-16 mb-16">
         <button class="btn btn-outline btn-sm" id="btn-reset-pw">${icon('key', 'icon-sm')} Cấp lại mật khẩu</button>
         <button class="btn btn-outline btn-sm" id="btn-edit-cust">${icon('edit', 'icon-sm')} Sửa</button>
-        <button class="btn btn-outline btn-sm" id="btn-add-contract">${icon('plus', 'icon-sm')} Thêm hợp đồng</button>
         <button class="btn btn-danger-outline btn-sm" id="btn-del-cust">${icon('trash', 'icon-sm')}</button>
       </div>` : '<div class="mt-16"></div>'}
       <div class="section-head"><h2 style="font-size:14px">Hợp đồng (${contracts.length})</h2></div>
-      <div id="contract-list">${contracts.map((ct) => contractRow(ct)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng.</p>'}</div>
+      <div id="contract-list">${contracts.map((ct) => contractRow(ct)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng — nhập từ Excel để thêm.</p>'}</div>
     `,
     onMount(sheet, closeFn) {
       sheet.querySelectorAll('[data-view-contract]').forEach((btn) => {
@@ -209,7 +219,6 @@ function openCustomerDetail(customerId, { readOnly = false } = {}) {
         showCredential(c, temp);
       });
       sheet.querySelector('#btn-edit-cust').addEventListener('click', () => { closeFn(); openCustomerForm(c); });
-      sheet.querySelector('#btn-add-contract').addEventListener('click', () => { closeFn(); openContractForm(customerId); });
       sheet.querySelector('#btn-del-cust').addEventListener('click', () => {
         confirmDialog({
           title: 'Xóa khách hàng?', message: `Xóa "${c.name}" và toàn bộ hợp đồng liên quan?`,
@@ -225,7 +234,7 @@ function contractRow(ct) {
   const status = S.CONTRACT_STATUS_MAP[ct.status];
   const interest = S.accruedInterest(ct);
   return `
-    <div class="list-row" data-view-contract="${ct.id}" style="cursor:pointer">
+    <div class="list-row" data-view-contract="${ct.id}" data-customer-id="${ct.customerId}" style="cursor:pointer">
       <div class="row-main">
         <div class="row-title">${ct.code}</div>
         <div class="row-sub">Vay ${formatVND(ct.principal)} · ${formatDate(ct.disbursedDate)} → ${formatDate(ct.dueDate)}</div>
@@ -235,8 +244,14 @@ function contractRow(ct) {
     </div>`;
 }
 
-/** Xem chi tiết hợp đồng — hiển thị đầy đủ giống hệt trang khách hàng thấy khi họ bấm vào. */
+/**
+ * Xem chi tiết hợp đồng — hiển thị đầy đủ giống hệt trang khách hàng thấy khi
+ * họ bấm vào. Dữ liệu lấy từ Excel, quản trị viên KHÔNG chỉnh sửa trực tiếp
+ * tại đây (không có ô nhập/nút "Sửa") — muốn cập nhật thì nhập lại file Excel
+ * mới nhất, hệ thống tự khớp đúng hợp đồng theo Số HĐTD.
+ */
 function openContractView(customerId, contract, { readOnly = false } = {}) {
+  const customer = S.getCustomer(customerId);
   const status = S.CONTRACT_STATUS_MAP[contract.status];
   const d = daysUntil(contract.dueDate);
   const interestPaidUntil = contract.interestPaidUntil || contract.disbursedDate;
@@ -254,10 +269,10 @@ function openContractView(customerId, contract, { readOnly = false } = {}) {
       <div class="oc-line"><span>Số tiền vay ban đầu</span><b>${formatVND(contract.principal)}</b></div>
       <div class="oc-line"><span>Dư nợ hiện tại</span><b style="color:var(--color-primary)">${formatVND(contract.balance)}</b></div>
       <div class="oc-line"><span>Lãi suất</span><b>${contract.interestRate}%/năm</b></div>
-      <div class="oc-line"><span>Kỳ hạn</span><b>${contract.termMonths ? contract.termMonths + ' tháng' : '—'}</b></div>
       <div class="oc-line"><span>Ngày giải ngân (ngày vay)</span><b>${formatDate(contract.disbursedDate)}</b></div>
       <div class="oc-line"><span>Ngày đến hạn</span><b>${formatDate(contract.dueDate)}</b></div>
       <div class="oc-line"><span>Đã trả lãi đến ngày</span><b>${formatDate(interestPaidUntil)}</b></div>
+      <div class="oc-line"><span>SĐT</span><b>${customer && customer.phone ? `<a href="tel:${customer.phone.replace(/\s/g, '')}" style="color:var(--color-primary)">${icon('phone', 'icon-sm')} ${customer.phone}</a>` : '—'}</b></div>
       ${canPay ? `
       <div class="oc-line" style="padding-top:8px;border-top:1px dashed var(--border);margin-top:6px">
         <span class="fw-700">Lãi đến nay</span>
@@ -267,99 +282,37 @@ function openContractView(customerId, contract, { readOnly = false } = {}) {
       <div class="field-hint ${d < 0 ? 'text-danger' : ''}" style="margin-top:6px">
         ${d < 0 ? `${icon('alert', 'icon-sm')} Đã quá hạn ${Math.abs(d)} ngày` : `Còn ${d} ngày đến hạn thanh toán`}
       </div>` : ''}
+      <div class="field-hint" style="margin-top:10px">Dữ liệu hợp đồng lấy từ file Excel — cập nhật bằng cách nhập lại file mới nhất, hệ thống tự khớp theo Số HĐTD.</div>
     `,
-    footHtml: readOnly ? '' : `<button class="btn btn-primary btn-block" id="edit-contract">${icon('edit', 'icon-sm')} Sửa hợp đồng</button>`,
+    footHtml: readOnly ? '' : `<button class="btn btn-danger-outline btn-block" id="del-contract">${icon('trash', 'icon-sm')} Xóa hợp đồng</button>`,
     onMount(sheet, closeFn) {
-      const editBtn = sheet.querySelector('#edit-contract');
-      if (editBtn) editBtn.addEventListener('click', () => { closeFn(); openContractForm(customerId, contract); });
-    },
-  });
-  return close;
-}
-
-function openContractForm(customerId, contract) {
-  const isEdit = !!contract;
-  const close = openModal({
-    title: isEdit ? `Sửa hợp đồng ${contract.code}` : 'Thêm hợp đồng vay',
-    bodyHtml: `
-      <form id="ctf">
-        <div class="field">
-          <label>Mã hợp đồng</label>
-          <input name="code" value="${contract ? contract.code : ''}" ${isEdit ? 'readonly' : ''} placeholder="Để trống sẽ tự sinh mã"/>
-        </div>
-        <div class="field-row">
-          <div class="field"><label>Số tiền vay</label><input name="principal" type="number" min="0" step="1000000" value="${contract ? contract.principal : ''}" placeholder="Mặc định = Dư nợ"/></div>
-          <div class="field"><label>Dư nợ hiện tại</label><input name="balance" type="number" min="0" step="100000" required value="${contract ? contract.balance : ''}"/></div>
-        </div>
-        <div class="field-row">
-          <div class="field"><label>Ngày vay</label><input name="disbursedDate" type="date" required value="${contract ? contract.disbursedDate : ''}"/></div>
-          <div class="field"><label>Ngày đến hạn</label><input name="dueDate" type="date" value="${contract ? contract.dueDate : ''}" placeholder="Tự tính nếu để trống"/></div>
-        </div>
-        <div class="field-row">
-          <div class="field"><label>Lãi suất (%/năm)</label><input name="interestRate" type="number" min="0" step="0.1" value="${contract ? contract.interestRate : ''}" placeholder="Mặc định: ${S.getOrg().defaultInterestRate}%"/></div>
-          <div class="field"><label>Kỳ hạn (tháng)</label><input name="termMonths" type="number" min="1" value="${contract ? contract.termMonths || '' : ''}" placeholder="Mặc định: ${S.getOrg().defaultTermMonths}"/></div>
-        </div>
-        <div class="field">
-          <label>Đã trả lãi đến ngày</label>
-          <input name="interestPaidUntil" type="date" value="${contract ? contract.interestPaidUntil || contract.disbursedDate : ''}"/>
-          <div class="field-hint">Dùng để tính lãi phát sinh đến hiện tại (Số dư × số ngày × lãi suất năm / 365).</div>
-        </div>
-        <div class="field">
-          <label>Trạng thái</label>
-          <select name="status">
-            ${S.CONTRACT_STATUS.map((s) => `<option value="${s.id}" ${contract?.status === s.id ? 'selected' : ''}>${s.label}</option>`).join('')}
-          </select>
-        </div>
-      </form>
-    `,
-    footHtml: `
-      ${isEdit ? `<button class="btn btn-danger-outline" id="del">${icon('trash', 'icon-sm')}</button>` : ''}
-      <button class="btn btn-primary btn-block" id="save">Lưu</button>`,
-    onMount(sheet, closeFn) {
-      sheet.querySelector('#save').addEventListener('click', () => {
-        const form = sheet.querySelector('#ctf');
-        if (!form.reportValidity()) return;
-        const fd = new FormData(form);
-        S.upsertContract({
-          customerId, code: fd.get('code') || (isEdit ? contract.code : null),
-          principal: fd.get('principal'), balance: fd.get('balance'),
-          disbursedDate: fd.get('disbursedDate'), dueDate: fd.get('dueDate'),
-          interestRate: fd.get('interestRate'), termMonths: fd.get('termMonths'), status: fd.get('status'),
-          interestPaidUntil: fd.get('interestPaidUntil'),
-        });
-        toast('Đã lưu hợp đồng', 'success');
-        closeFn();
-        window.__qtdRedrawCustomers?.();
-      });
-      const delBtn = sheet.querySelector('#del');
+      const delBtn = sheet.querySelector('#del-contract');
       if (delBtn) delBtn.addEventListener('click', () => {
         confirmDialog({
-          title: 'Xóa hợp đồng?', message: `Xóa hợp đồng ${contract.code}?`, confirmLabel: 'Xóa', danger: true,
+          title: 'Xóa hợp đồng?', message: `Xóa hợp đồng ${contract.code}? Nếu hợp đồng vẫn còn trong file Excel, lần nhập sau sẽ tạo lại.`,
+          confirmLabel: 'Xóa', danger: true,
           onConfirm: () => { S.deleteContract(contract.id); closeFn(); toast('Đã xóa hợp đồng', 'success'); window.__qtdRedrawCustomers?.(); },
         });
       });
     },
   });
+  return close;
 }
 
-const REQUIRED_COLUMNS = 'Người nhận nợ (Họ tên), Số CMND/CCCD, Địa chỉ, Ngày nhận nợ, Thu lãi đến ngày, Số dư';
-const OPTIONAL_COLUMNS = 'SĐT, Mã hợp đồng, Số tiền vay, Ngày đến hạn, Lãi suất';
+const REQUIRED_COLUMNS = 'Số HĐTD, Người nhận nợ, Địa chỉ, Số CMND/CCCD, Số di động, Ngày nhận nợ, Ngày đáo hạn, Thu lãi đến ngày, Số tiền giải ngân, Số dư, Lãi suất';
 
 function openImportModal() {
   const close = openModal({
     title: 'Nhập dữ liệu từ Excel',
     bodyHtml: `
       <p class="text-sm text-muted mb-8">
-        Chọn file Excel (<b>.xlsx</b>) — đúng theo mẫu file bạn đang quản lý, có 6 cột bắt buộc theo thứ tự sau (dòng đầu là tiêu đề sẽ tự bỏ qua):<br/>
+        Chọn đúng file Excel sổ theo dõi vay bạn đang dùng (<b>.xls</b> hoặc <b>.xlsx</b>) — có các cột theo đúng thứ tự sau (dòng đầu là tiêu đề sẽ tự bỏ qua):<br/>
         <b>${REQUIRED_COLUMNS}</b>
       </p>
-      <p class="text-sm text-muted mb-8">
-        Có thể thêm các cột sau vào cuối nếu có (không bắt buộc, thiếu sẽ tự tính/tự sinh):<br/>
-        <b>${OPTIONAL_COLUMNS}</b>
-      </p>
+      <p class="text-sm text-muted mb-8">Cột nào thiếu dữ liệu ở 1 dòng vẫn nhập được — hệ thống tự tính/tự sinh (mã hợp đồng, ngày đến hạn, lãi suất mặc định...).</p>
       <div class="field">
-        <input type="file" id="file-input" accept=".xlsx"/>
-        <div class="field-hint">Chỉ đọc được file .xlsx (Excel 2007 trở lên). File .xls cũ cần lưu lại dưới dạng .xlsx trước.</div>
+        <input type="file" id="file-input" accept=".xls,.xlsx"/>
+        <div class="field-hint">Đọc trực tiếp trong trình duyệt, hỗ trợ cả file .xls (Excel 97-2003) lẫn .xlsx — không cần chuyển đổi định dạng trước, không cần thư viện ngoài.</div>
       </div>
       <div id="import-result"></div>
       <details class="mt-16">
@@ -395,7 +348,7 @@ function openImportModal() {
         const file = e.target.files[0];
         if (!file) return;
         try {
-          const rows = await readXlsxFirstSheet(file);
+          const rows = await readExcelFirstSheet(file);
           await runImport(rowsToTsv(rows));
         } catch (err) {
           toast('Không đọc được file: ' + (err.message || ''), 'error');

@@ -234,10 +234,9 @@ function autoContractCode(cccd) {
   return `HD-${cccd}-${String(n).padStart(3, '0')}`;
 }
 
-export function upsertContract({ customerId, code, principal, disbursedDate, dueDate, interestRate, balance, status, termMonths, interestPaidUntil }) {
+export function upsertContract({ customerId, code, principal, disbursedDate, dueDate, interestRate, balance, status, interestPaidUntil }) {
   const customer = getCustomer(customerId);
   const bal = Number(balance) || 0;
-  const termM = Number(termMonths) || state.org.defaultTermMonths || 12;
   let ct = code ? state.contracts.find((c) => c.code === code) : null;
   const data = {
     customerId,
@@ -245,10 +244,9 @@ export function upsertContract({ customerId, code, principal, disbursedDate, due
     autoCode: !code,
     principal: principal != null && principal !== '' ? Number(principal) || 0 : bal, // mặc định = dư nợ nếu không có số tiền vay gốc
     disbursedDate,
-    dueDate: dueDate || addDays(new Date(disbursedDate), termM * 30).toISOString().slice(0, 10),
+    dueDate: dueDate || addDays(new Date(disbursedDate), 365).toISOString().slice(0, 10), // mặc định 1 năm nếu Excel không có
     interestRate: interestRate != null && interestRate !== '' ? Number(interestRate) || 0 : (state.org.defaultInterestRate || 0),
     balance: bal, status: status || 'dang_vay',
-    termMonths: termM,
     interestPaidUntil: interestPaidUntil || disbursedDate,
   };
   if (ct) { Object.assign(ct, data); }
@@ -268,14 +266,22 @@ export function deleteContract(id) {
 }
 
 // ------------------------------------------------------------
-// Nhập dữ liệu từ bảng (đọc trực tiếp file .xlsx hoặc dán dữ liệu copy từ Excel)
-// Cột bắt buộc, đúng theo mẫu file quản lý sẵn có — Người nhận nợ | Số CMND/CCCD |
-// Địa chỉ | Ngày nhận nợ | Thu lãi đến ngày | Số dư (địa chỉ tự tách Xóm/Thôn/Tỉnh).
-// Cột tùy chọn thêm vào cuối nếu có — SĐT | Mã hợp đồng | Số tiền vay | Ngày đến hạn | Lãi suất
+// Nhập dữ liệu từ bảng (đọc trực tiếp file .xlsx/.xls hoặc dán dữ liệu copy
+// từ Excel) — đúng thứ tự cột theo mẫu sổ theo dõi vay đang dùng:
+// Số HĐTD | Người nhận nợ | Địa chỉ | Số CMND/CCCD | Số di động |
+// Ngày nhận nợ | Ngày đáo hạn | Thu lãi đến ngày | Số tiền giải ngân |
+// Số dư | Lãi suất
+// (địa chỉ tự tách Xóm/Thôn/Tỉnh; cột nào thiếu dữ liệu sẽ tự tính/tự sinh)
 // ------------------------------------------------------------
 export function parseVNNumber(str) {
-  const cleaned = String(str || '').replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
-  const n = parseFloat(cleaned);
+  let s = String(str ?? '').trim().replace(/[^\d.,-]/g, '');
+  if (!s) return 0;
+  // "42.500.000" kiểu VN (chấm ngăn cách hàng nghìn, đúng từng nhóm 3 số) -> bỏ chấm
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, '');
+  else if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.'); // "1.234.567,89"
+  else if (s.includes(',')) s = s.replace(',', '.'); // chỉ có phẩy -> coi là dấu thập phân
+  // còn lại (vd "9.5" từ ô số của Excel/JS): giữ nguyên dấu chấm làm phần thập phân
+  const n = parseFloat(s);
   return Number.isFinite(n) ? n : 0;
 }
 export function parseVNDate(str) {
@@ -295,17 +301,17 @@ export function parseVNDate(str) {
   return Number.isNaN(dt.getTime()) ? '' : dt.toISOString().slice(0, 10);
 }
 
-const HEADER_HINTS = ['cccd', 'cmnd', 'người nhận nợ', 'nguoi nhan no', 'họ tên', 'ho ten'];
+const HEADER_HINTS = ['cccd', 'cmnd', 'người nhận nợ', 'nguoi nhan no', 'họ tên', 'ho ten', 'số hđtd', 'so hdtd'];
 export async function importFromPastedTable(text) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const result = { createdCustomers: [], updatedCustomers: 0, contracts: 0, skipped: 0, errors: [] };
   for (const line of lines) {
     const cells = line.includes('\t') ? line.split('\t') : line.split(',');
     if (cells.length < 2) { result.skipped++; continue; }
-    const headerCheck = (cells[0] + ' ' + (cells[1] || '')).toLowerCase();
+    const headerCheck = cells.slice(0, 2).join(' ').toLowerCase();
     if (HEADER_HINTS.some((h) => headerCheck.includes(h))) continue; // bỏ qua dòng tiêu đề
 
-    const [name, cccdRaw, address, disbursedDate, interestPaidUntil, balance, phone, code, principal, dueDate, interestRate] = cells.map((c) => c.trim());
+    const [code, name, address, cccdRaw, phone, disbursedDate, dueDate, interestPaidUntil, principal, balance, interestRate] = cells.map((c) => c.trim());
     const cccd = (cccdRaw || '').replace(/\s/g, '');
     if (!cccd || !/^\d{9,12}$/.test(cccd)) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
 
@@ -430,9 +436,8 @@ async function seedDemoData() {
     bankName: 'Ngân hàng Hợp tác xã Việt Nam (Co-op Bank)',
     bankAccountNo: '5200000000825012',
     bankAccountName: 'QUY TIN DUNG NHAN DAN BINH NGUYEN',
-    // Dùng khi file/dữ liệu nhập vào không có sẵn lãi suất hoặc kỳ hạn riêng cho từng hợp đồng
+    // Dùng khi file/dữ liệu nhập vào không có sẵn lãi suất riêng cho từng hợp đồng
     defaultInterestRate: 9,
-    defaultTermMonths: 12,
   };
 
   const adminCred = await makeCredential('Admin@123');
@@ -480,7 +485,6 @@ async function seedDemoData() {
         interestRate: [8.5, 9.2, 10.0][randInt(rng, 0, 2)],
         balance: status === 'da_tat_toan' ? 0 : Math.round((principal * (0.3 + rng() * 0.7)) / 100000) * 100000,
         status,
-        termMonths: randInt(rng, 6, 24),
         // Giả lập lần đóng lãi gần nhất: cách đây một số ngày (0-45 ngày), không vượt quá ngày giải ngân
         interestPaidUntil: (() => {
           const lastPaid = addDays(now, -randInt(rng, 0, 45));

@@ -40,12 +40,9 @@ export function render(contentEl) {
 
     <div class="card card-pad mb-16">
       <div class="section-head"><h2>Mặc định cho hợp đồng khi nhập liệu</h2></div>
-      <p class="text-sm text-muted mb-8">Dùng khi nhập từ Excel/thêm hợp đồng mà không có sẵn lãi suất hoặc kỳ hạn riêng cho từng khoản vay.</p>
+      <p class="text-sm text-muted mb-8">Dùng khi nhập từ Excel mà dòng dữ liệu không có sẵn lãi suất riêng cho khoản vay đó.</p>
       <form id="default-form">
-        <div class="field-row">
-          <div class="field"><label>Lãi suất mặc định (%/năm)</label><input name="defaultInterestRate" type="number" min="0" step="0.1" value="${org.defaultInterestRate}"/></div>
-          <div class="field"><label>Kỳ hạn mặc định (tháng)</label><input name="defaultTermMonths" type="number" min="1" value="${org.defaultTermMonths}"/></div>
-        </div>
+        <div class="field"><label>Lãi suất mặc định (%/năm)</label><input name="defaultInterestRate" type="number" min="0" step="0.1" value="${org.defaultInterestRate}"/></div>
         <button class="btn btn-primary btn-block" type="submit">Lưu mặc định</button>
       </form>
     </div>
@@ -101,7 +98,7 @@ export function render(contentEl) {
   contentEl.querySelector('#default-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    S.updateOrg({ defaultInterestRate: Number(fd.get('defaultInterestRate')) || 0, defaultTermMonths: Number(fd.get('defaultTermMonths')) || 12 });
+    S.updateOrg({ defaultInterestRate: Number(fd.get('defaultInterestRate')) || 0 });
     toast('Đã lưu mặc định hợp đồng', 'success');
   });
 

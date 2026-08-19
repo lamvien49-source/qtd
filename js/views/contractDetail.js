@@ -3,7 +3,7 @@ import { icon } from '../icons.js';
 import { pageHeader, bindHeaderActions } from '../components/shell.js';
 import { statusBadge } from '../components/ui.js';
 import { openModal } from '../components/modal.js';
-import { formatVND, formatDate, daysUntil, stripDiacritics } from '../utils.js';
+import { formatVND, formatDate, formatNumber, daysUntil, stripDiacritics } from '../utils.js';
 
 export function renderHeader(headerEl) {
   headerEl.innerHTML = pageHeader({ title: 'Chi tiết hợp đồng', back: true });
@@ -30,7 +30,6 @@ export function render(contentEl, filterEl, params) {
       <div class="oc-line"><span>Số tiền vay ban đầu</span><b>${formatVND(contract.principal)}</b></div>
       <div class="oc-line"><span>Dư nợ hiện tại</span><b style="color:var(--color-primary)">${formatVND(contract.balance)}</b></div>
       <div class="oc-line"><span>Lãi suất</span><b>${contract.interestRate}%/năm</b></div>
-      <div class="oc-line"><span>Kỳ hạn</span><b>${contract.termMonths ? contract.termMonths + ' tháng' : '—'}</b></div>
       <div class="oc-line"><span>Ngày giải ngân</span><b>${formatDate(contract.disbursedDate)}</b></div>
       <div class="oc-line"><span>Ngày đến hạn</span><b>${formatDate(contract.dueDate)}</b></div>
       <div class="oc-line"><span>Đã trả lãi đến ngày</span><b>${formatDate(interestPaidUntil)}</b></div>
@@ -64,6 +63,28 @@ function buildVietQrUrl({ bin, accountNo, amount, content, accountName }) {
   return `https://img.vietqr.io/image/${bin}-${accountNo}-compact2.png?amount=${Math.round(amount)}&addInfo=${info}&accountName=${name}`;
 }
 
+/**
+ * Liên kết thanh toán nhanh VietQR — mở trên điện thoại sẽ đưa thẳng tới màn
+ * hình chọn app ngân hàng của VietQR, bấm vào app đang dùng sẽ nhảy vào đúng
+ * màn hình chuyển khoản đã điền sẵn số tiền/nội dung (dịch vụ của VietQR,
+ * cần Internet trên máy khách hàng — không xem trước được trong môi trường
+ * phát triển không có mạng ở đây).
+ */
+function buildVietQrPayLink({ bin, accountNo, amount, content }) {
+  const params = new URLSearchParams({ ba: `${accountNo}-${bin}`, am: String(Math.round(amount)), tn: content });
+  return `https://dl.vietqr.io/pay?${params.toString()}`;
+}
+
+/** Ô nhập số tiền hiển thị có dấu chấm ngăn cách hàng nghìn (VD: 1.500.000) khi gõ. */
+function bindMoneyInput(inputEl, initial, onChange) {
+  inputEl.value = initial ? formatNumber(initial) : '';
+  inputEl.addEventListener('input', () => {
+    const raw = Number(inputEl.value.replace(/\D/g, '')) || 0;
+    inputEl.value = raw ? formatNumber(raw) : '';
+    onChange(raw);
+  });
+}
+
 function openPaymentModal(contract, customer, accrued) {
   const org = S.getOrg();
   let payType = 'lai'; // 'goc' | 'lai'
@@ -79,7 +100,8 @@ function openPaymentModal(contract, customer, accrued) {
       function content() {
         const total = payType === 'goc' ? principalAmount + accrued : interestAmount;
         const loai = payType === 'goc' ? 'GOC' : 'LAI';
-        const text = `${stripDiacritics(customer.name)} THANH TOAN ${loai} ${Math.round(total)} HDTD ${contract.code}`;
+        // Không nhúng số tiền vào nội dung — số tiền đã có ở dòng riêng + mã QR, tránh trùng lặp.
+        const text = `${stripDiacritics(customer.name)} THANH TOAN ${loai} HDTD ${contract.code}`;
         return { total, text };
       }
 
@@ -92,6 +114,7 @@ function openPaymentModal(contract, customer, accrued) {
         body.querySelector('#sum-content').textContent = text;
         if (hasBank) {
           body.querySelector('#qr-img').src = buildVietQrUrl({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: total, content: text, accountName: org.bankAccountName });
+          body.querySelector('#btn-continue-pay').href = buildVietQrPayLink({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: total, content: text });
         }
       }
 
@@ -106,9 +129,9 @@ function openPaymentModal(contract, customer, accrued) {
           </div>
           ${payType === 'goc' ? `
             <div class="field-hint mb-8">Tiền lãi tính đúng theo hợp đồng (không đổi được): <b>${formatVND(accrued)}</b></div>
-            <div class="field"><label>Số tiền gốc muốn trả</label><input type="number" id="principal-input" min="0" max="${contract.balance}" step="10000" value="${principalAmount}"/></div>
+            <div class="field"><label>Số tiền gốc muốn trả</label><input type="text" inputmode="numeric" id="principal-input"/></div>
           ` : `
-            <div class="field"><label>Số tiền lãi</label><input type="number" id="interest-input" min="0" step="1000" value="${interestAmount}"/></div>
+            <div class="field"><label>Số tiền lãi</label><input type="text" inputmode="numeric" id="interest-input"/></div>
             <div class="field-hint mb-8">Mặc định lấy theo lãi phát sinh đến hôm nay, bạn có thể sửa lại nếu cần.</div>
           `}
           <div class="card card-pad mb-16" style="background:var(--surface-alt)">
@@ -121,7 +144,9 @@ function openPaymentModal(contract, customer, accrued) {
           ${hasBank ? `
             <div style="text-align:center">
               <img id="qr-img" alt="Mã QR chuyển khoản" style="max-width:220px;width:100%;border:1px solid var(--border);border-radius:12px"/>
-              <div class="field-hint mt-8">Mở app ngân hàng/ví điện tử bất kỳ hỗ trợ VietQR và quét mã này để chuyển khoản. Có thể gửi mã này cho người khác chuyển giúp.</div>
+              <div class="field-hint mt-8 mb-12">Mở app ngân hàng/ví điện tử bất kỳ hỗ trợ VietQR và quét mã này để chuyển khoản. Có thể gửi mã này cho người khác chuyển giúp.</div>
+              <a id="btn-continue-pay" class="btn btn-primary btn-block" target="_blank" rel="noopener">${icon('wallet', 'icon-sm')} Thanh toán tiếp — Mở app ngân hàng</a>
+              <div class="field-hint mt-8">Bấm vào sẽ mở trang chọn app ngân hàng của VietQR, chọn đúng app khách hàng đang dùng sẽ tự điền sẵn số tiền &amp; nội dung để chuyển ngay.</div>
             </div>
           ` : `
             <div class="field-hint text-danger">Quỹ chưa cấu hình mã QR (mã ngân hàng). Vui lòng chuyển khoản thủ công theo thông tin ở trên, hoặc liên hệ quầy giao dịch.</div>
@@ -131,9 +156,9 @@ function openPaymentModal(contract, customer, accrued) {
           opt.addEventListener('click', () => { payType = opt.dataset.type; draw(); });
         });
         const pInput = body.querySelector('#principal-input');
-        if (pInput) pInput.addEventListener('input', (e) => { principalAmount = Number(e.target.value) || 0; updateSummary(); });
+        if (pInput) bindMoneyInput(pInput, principalAmount, (v) => { principalAmount = v; updateSummary(); });
         const iInput = body.querySelector('#interest-input');
-        if (iInput) iInput.addEventListener('input', (e) => { interestAmount = Number(e.target.value) || 0; updateSummary(); });
+        if (iInput) bindMoneyInput(iInput, interestAmount, (v) => { interestAmount = v; updateSummary(); });
         updateSummary();
       }
       draw();
