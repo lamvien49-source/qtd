@@ -239,6 +239,7 @@ svg { display: block; }
 .stat-tile.c-pink { background: var(--pink-bg); color: #a3185e; }
 .stat-tile.c-blue { background: var(--info-bg); color: #1e4fc4; }
 .stat-tile.c-purple { background: var(--purple-bg); color: #5b21b6; }
+.stat-tile.c-orange { background: var(--warning-bg); color: var(--warning); }
 .trend-up { color: var(--success); }
 .trend-down { color: var(--danger); }
 

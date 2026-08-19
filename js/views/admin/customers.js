@@ -11,10 +11,20 @@ export function renderHeader(headerEl) {
   headerEl.innerHTML = pageHeader({ title: 'Khách hàng & Hợp đồng' });
 }
 
+const SORT_OPTIONS = [
+  { value: 'default', label: 'Mặc định' },
+  { value: 'principal-asc', label: 'Gốc: Thấp → Cao' },
+  { value: 'principal-desc', label: 'Gốc: Cao → Thấp' },
+  { value: 'interest-asc', label: 'Lãi: Thấp → Cao' },
+  { value: 'interest-desc', label: 'Lãi: Cao → Thấp' },
+];
+const SORT_LABEL = Object.fromEntries(SORT_OPTIONS.map((o) => [o.value, o.label]));
+
 let query = '';
 let filterThon = 'all';
 let filterXom = 'all';
 let onlyOverdue = false;
+let sortMode = 'default';
 
 function currentAdmin() {
   const session = S.getSession();
@@ -24,7 +34,7 @@ function currentAdmin() {
 export function render(contentEl, filterEl) {
   const admin = currentAdmin();
   const isStaff = admin.role === 'staff';
-  filterThon = 'all'; filterXom = 'all'; // reset bộ lọc mỗi lần vào trang
+  filterThon = 'all'; filterXom = 'all'; sortMode = 'default'; // reset bộ lọc mỗi lần vào trang
 
   filterEl.innerHTML = `
     <div style="padding:10px 14px 0">
@@ -32,6 +42,7 @@ export function render(contentEl, filterEl) {
       <div class="filter-row" style="padding:0 0 8px">
         ${pillSelectHtml('pill-thon', 'Thôn: Tất cả')}
         ${pillSelectHtml('pill-xom', 'Xóm: Tất cả')}
+        ${pillSelectHtml('pill-sort', 'Sắp xếp: Mặc định')}
       </div>
       <div class="chip-row mb-8">
         <button class="chip ${!onlyOverdue ? 'active' : ''}" data-overdue="0">Tất cả</button>
@@ -78,6 +89,17 @@ export function render(contentEl, filterEl) {
         },
       });
     });
+    filterEl.querySelector('#pill-sort').addEventListener('click', () => {
+      openPicker({
+        title: 'Sắp xếp theo', selected: sortMode,
+        options: SORT_OPTIONS,
+        onSelect: (val) => {
+          sortMode = val;
+          filterEl.querySelector('#pill-sort').firstChild.textContent = `Sắp xếp: ${SORT_LABEL[val]} `;
+          draw();
+        },
+      });
+    });
   }
   bindPickers();
 
@@ -91,33 +113,40 @@ export function render(contentEl, filterEl) {
       const q = query.trim().toLowerCase();
       list = list.filter((c) => c.name.toLowerCase().includes(q) || c.cccd.includes(q) || (c.phone || '').includes(q));
     }
-    if (onlyOverdue) {
-      list = list.filter((c) => S.listContractsByCustomer(c.id).some((ct) => ct.status === 'qua_han'));
+    // Gộp sẵn hợp đồng + tổng gốc/lãi từng khách hàng — dùng để hiển thị & sắp xếp
+    let enriched = list.map((c) => {
+      const contracts = S.listContractsByCustomer(c.id);
+      const totalPrincipal = contracts.reduce((s, ct) => s + (ct.principal || 0), 0);
+      const totalInterest = contracts.reduce((s, ct) => s + S.accruedInterest(ct), 0);
+      return { c, contracts, totalPrincipal, totalInterest };
+    });
+    if (onlyOverdue) enriched = enriched.filter((e) => e.contracts.some((ct) => ct.status === 'qua_han'));
+    if (sortMode !== 'default') {
+      const [field, dir] = sortMode.split('-');
+      const key = field === 'principal' ? 'totalPrincipal' : 'totalInterest';
+      enriched.sort((a, b) => (dir === 'asc' ? a[key] - b[key] : b[key] - a[key]));
     }
+
     contentEl.innerHTML = `
-      <div class="text-sm text-muted mb-8">${list.length} khách hàng</div>
-      ${list.length ? list.map((c) => {
-        const contracts = S.listContractsByCustomer(c.id);
-        const total = S.customerOutstandingTotal(c.id);
+      <div class="text-sm text-muted mb-8">${enriched.length} khách hàng</div>
+      ${enriched.length ? enriched.map(({ c, contracts }) => {
         const hasOverdue = contracts.some((ct) => ct.status === 'qua_han');
         return `
         <div class="card card-pad mb-8">
           <div class="list-row" data-id="${c.id}" style="cursor:pointer;padding:0">
             <div class="row-thumb" style="background:${colorFor(c.id)}">${initials(c.name)}</div>
             <div class="row-main">
-              <div class="row-title">${c.name}${hasOverdue ? ` <span class="badge badge-red">Quá hạn</span>` : ''}</div>
-              <div class="row-sub">${maskCccd(c.cccd)} · ${c.phone || 'Chưa có SĐT'} · ${contracts.length} hợp đồng</div>
+              <div class="row-title">${c.name}${hasOverdue ? ` <span class="badge badge-red">Quá hạn</span>` : ''}${c.mustChangePassword ? ` <span class="badge badge-yellow">Chưa đổi MK</span>` : ''}</div>
+              <div class="row-sub">${maskCccd(c.cccd)} · ${c.phone || 'Chưa có SĐT'}</div>
               <div class="row-sub">${[c.xom, c.thon, c.tinh].filter(Boolean).join(', ') || c.address || 'Chưa có địa bàn'}</div>
             </div>
-            <div class="row-end">
-              <div class="amount">${formatVND(total)}</div>
-              ${c.mustChangePassword ? `<div class="amount-sub" style="color:var(--warning)">Chưa đổi MK</div>` : ''}
-            </div>
+            ${contracts.length === 1 ? contractAmountsHtml(contracts[0]) : ''}
           </div>
-          ${contracts.length ? `
-          <div style="border-top:1px dashed var(--border);margin-top:8px;padding-top:4px">
-            ${contracts.map((ct) => contractRow(ct)).join('')}
+          ${contracts.length > 1 ? `
+          <div style="border-top:1px dashed var(--border);margin-top:6px">
+            ${contracts.map((ct) => contractRowCompact(ct)).join('')}
           </div>` : ''}
+          ${!contracts.length ? '<p class="text-sm text-muted mt-8">Chưa có hợp đồng.</p>' : ''}
         </div>`;
       }).join('') : emptyState({ iconName: 'users', title: 'Không có khách hàng phù hợp', message: isStaff ? 'Chưa có khách hàng nào ở địa bàn bạn được xem.' : 'Dùng "Nhập từ Excel" hoặc "Tạo tài khoản khách hàng" để bắt đầu.' })}
     `;
@@ -207,7 +236,7 @@ function openCustomerDetail(customerId, { readOnly = false } = {}) {
         <button class="btn btn-danger-outline btn-sm" id="btn-del-cust">${icon('trash', 'icon-sm')}</button>
       </div>` : '<div class="mt-16"></div>'}
       <div class="section-head"><h2 style="font-size:14px">Hợp đồng (${contracts.length})</h2></div>
-      <div id="contract-list">${contracts.map((ct) => contractRow(ct)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng — nhập từ Excel để thêm.</p>'}</div>
+      <div id="contract-list">${contracts.map((ct) => contractRowCompact(ct)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng — nhập từ Excel để thêm.</p>'}</div>
     `,
     onMount(sheet, closeFn) {
       sheet.querySelectorAll('[data-view-contract]').forEach((btn) => {
@@ -230,18 +259,34 @@ function openCustomerDetail(customerId, { readOnly = false } = {}) {
   });
 }
 
-function contractRow(ct) {
-  const status = S.CONTRACT_STATUS_MAP[ct.status];
+/** Cột phải "Gốc / Lãi" — dùng cho hàng khách hàng chỉ có 1 hợp đồng lẫn từng dòng hợp đồng gọn. */
+function contractAmountsHtml(ct) {
   const interest = S.accruedInterest(ct);
   return `
-    <div class="list-row" data-view-contract="${ct.id}" data-customer-id="${ct.customerId}" style="cursor:pointer">
-      <div class="row-main">
-        <div class="row-title">${ct.code}</div>
-        <div class="row-sub">Vay ${formatVND(ct.principal)} · ${formatDate(ct.disbursedDate)} → ${formatDate(ct.dueDate)}</div>
-        <div class="row-sub">Đã trả lãi đến ${formatDate(ct.interestPaidUntil || ct.disbursedDate)}${interest > 0 ? ` · Lãi đến nay: ${formatVND(interest)}` : ''}</div>
-      </div>
-      <div class="row-end"><div class="amount">${formatVND(ct.balance)}</div>${statusBadge(status)}</div>
+    <div class="row-end">
+      <div class="amount">Gốc: ${formatVND(ct.principal)}</div>
+      <div class="amount-sub" style="color:var(--warning)">Lãi: ${formatVND(interest)}</div>
     </div>`;
+}
+
+/** Dòng hợp đồng gọn — chỉ mã + trạng thái + gốc/lãi, bấm vào mới ra đầy đủ chi tiết (openContractView). */
+function contractRowCompact(ct) {
+  const status = S.CONTRACT_STATUS_MAP[ct.status];
+  return `
+    <div class="list-row" data-view-contract="${ct.id}" data-customer-id="${ct.customerId}" style="cursor:pointer;padding:8px 0">
+      <div class="row-main">
+        <div class="row-title" style="font-size:13.5px">Hợp đồng: ${ct.code}</div>
+        <div>${statusBadge(status)}</div>
+      </div>
+      ${contractAmountsHtml(ct)}
+    </div>`;
+}
+
+/** Soạn sẵn tin nhắn SMS báo lãi cho khách hàng — mở app nhắn tin sẵn có trên điện thoại quản trị viên, không cần dịch vụ SMS ngoài. */
+function buildSmsLink(customer, contract, accrued) {
+  const org = S.getOrg();
+  const msg = `${org.shortName}: Hop dong ${contract.code}, lai tinh den ngay ${formatDate(new Date())} la ${formatVND(accrued)}. Quy khach vui long thanh toan dung han. Hotline: ${org.hotline}`;
+  return `sms:${customer.phone.replace(/\s/g, '')}?body=${encodeURIComponent(msg)}`;
 }
 
 /**
@@ -273,6 +318,9 @@ function openContractView(customerId, contract, { readOnly = false } = {}) {
       <div class="oc-line"><span>Ngày đến hạn</span><b>${formatDate(contract.dueDate)}</b></div>
       <div class="oc-line"><span>Đã trả lãi đến ngày</span><b>${formatDate(interestPaidUntil)}</b></div>
       <div class="oc-line"><span>SĐT</span><b>${customer && customer.phone ? `<a href="tel:${customer.phone.replace(/\s/g, '')}" style="color:var(--color-primary)">${icon('phone', 'icon-sm')} ${customer.phone}</a>` : '—'}</b></div>
+      ${customer && customer.phone && canPay ? `
+      <a href="${buildSmsLink(customer, contract, accrued)}" class="btn btn-outline btn-sm btn-block mt-8">${icon('message', 'icon-sm')} Nhắn SMS báo lãi cho khách</a>
+      ` : ''}
       ${canPay ? `
       <div class="oc-line" style="padding-top:8px;border-top:1px dashed var(--border);margin-top:6px">
         <span class="fw-700">Lãi đến nay</span>

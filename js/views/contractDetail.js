@@ -64,16 +64,40 @@ function buildVietQrUrl({ bin, accountNo, amount, content, accountName }) {
 }
 
 /**
- * Liên kết thanh toán nhanh VietQR — mở trên điện thoại sẽ đưa thẳng tới màn
- * hình chọn app ngân hàng của VietQR, bấm vào app đang dùng sẽ nhảy vào đúng
- * màn hình chuyển khoản đã điền sẵn số tiền/nội dung (dịch vụ của VietQR,
- * cần Internet trên máy khách hàng — không xem trước được trong môi trường
- * phát triển không có mạng ở đây).
+ * Liên kết thanh toán nhanh VietQR cho 1 app ngân hàng/ví cụ thể — mở trên
+ * điện thoại sẽ nhảy thẳng vào app đó, màn hình chuyển khoản điền sẵn số
+ * tiền/nội dung (dịch vụ của VietQR, cần Internet trên máy khách hàng —
+ * không xem trước được trong môi trường phát triển không có mạng ở đây).
+ * LƯU Ý: dl.vietqr.io bắt buộc phải có tham số "app" (đã kiểm chứng — thiếu
+ * sẽ báo lỗi "Missing parameter app"), nên phải để khách chọn đúng app đang
+ * dùng chứ không mở thẳng được duy nhất 1 link chung.
  */
-function buildVietQrPayLink({ bin, accountNo, amount, content }) {
-  const params = new URLSearchParams({ ba: `${accountNo}-${bin}`, am: String(Math.round(amount)), tn: content });
+function buildVietQrPayLink({ bin, accountNo, amount, content, app }) {
+  const params = new URLSearchParams({ app, ba: `${accountNo}-${bin}`, am: String(Math.round(amount)), tn: content });
   return `https://dl.vietqr.io/pay?${params.toString()}`;
 }
+
+// Danh sách app — mã "app" theo hiểu biết tốt nhất về dl.vietqr.io, CHƯA kiểm
+// chứng được với ngân hàng thật (môi trường phát triển không có Internet ra
+// ngoài) — nếu app nào bấm vào không mở đúng, báo lại để chỉnh mã cho đúng.
+const BANK_APPS = [
+  { code: 'vietcombank', label: 'Vietcombank' },
+  { code: 'vietinbank', label: 'VietinBank' },
+  { code: 'bidv', label: 'BIDV' },
+  { code: 'agribank', label: 'Agribank' },
+  { code: 'mbbank', label: 'MB Bank' },
+  { code: 'techcombank', label: 'Techcombank' },
+  { code: 'acb', label: 'ACB' },
+  { code: 'vpbank', label: 'VPBank' },
+  { code: 'tpbank', label: 'TPBank' },
+  { code: 'sacombank', label: 'Sacombank' },
+  { code: 'vib', label: 'VIB' },
+  { code: 'shb', label: 'SHB' },
+  { code: 'hdbank', label: 'HDBank' },
+  { code: 'msb', label: 'MSB' },
+  { code: 'momo', label: 'Ví MoMo' },
+  { code: 'zalopay', label: 'ZaloPay' },
+];
 
 /** Ô nhập số tiền hiển thị có dấu chấm ngăn cách hàng nghìn (VD: 1.500.000) khi gõ. */
 function bindMoneyInput(inputEl, initial, onChange) {
@@ -114,7 +138,9 @@ function openPaymentModal(contract, customer, accrued) {
         body.querySelector('#sum-content').textContent = text;
         if (hasBank) {
           body.querySelector('#qr-img').src = buildVietQrUrl({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: total, content: text, accountName: org.bankAccountName });
-          body.querySelector('#btn-continue-pay').href = buildVietQrPayLink({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: total, content: text });
+          body.querySelectorAll('[data-bank-app]').forEach((a) => {
+            a.href = buildVietQrPayLink({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: total, content: text, app: a.dataset.bankApp });
+          });
         }
       }
 
@@ -144,9 +170,14 @@ function openPaymentModal(contract, customer, accrued) {
           ${hasBank ? `
             <div style="text-align:center">
               <img id="qr-img" alt="Mã QR chuyển khoản" style="max-width:220px;width:100%;border:1px solid var(--border);border-radius:12px"/>
-              <div class="field-hint mt-8 mb-12">Mở app ngân hàng/ví điện tử bất kỳ hỗ trợ VietQR và quét mã này để chuyển khoản. Có thể gửi mã này cho người khác chuyển giúp.</div>
-              <a id="btn-continue-pay" class="btn btn-primary btn-block" target="_blank" rel="noopener">${icon('wallet', 'icon-sm')} Thanh toán tiếp — Mở app ngân hàng</a>
-              <div class="field-hint mt-8">Bấm vào sẽ mở trang chọn app ngân hàng của VietQR, chọn đúng app khách hàng đang dùng sẽ tự điền sẵn số tiền &amp; nội dung để chuyển ngay.</div>
+              <div class="field-hint mt-8 mb-12">Mở app ngân hàng/ví điện tử bất kỳ hỗ trợ VietQR và quét mã này để chuyển khoản — cách chắc chắn hoạt động, dùng được với mọi ngân hàng.</div>
+            </div>
+            <div class="field mt-8">
+              <label>Hoặc thanh toán tiếp — chọn ngân hàng bạn đang dùng</label>
+              <div class="field-hint mb-8">Bấm đúng app đang dùng để mở thẳng màn hình chuyển khoản đã điền sẵn số tiền &amp; nội dung. <b class="text-danger">Tính năng đang thử nghiệm</b> — nếu app không mở đúng, dùng cách quét mã QR ở trên.</div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px">
+                ${BANK_APPS.map((b) => `<a class="chip" data-bank-app="${b.code}" target="_blank" rel="noopener">${b.label}</a>`).join('')}
+              </div>
             </div>
           ` : `
             <div class="field-hint text-danger">Quỹ chưa cấu hình mã QR (mã ngân hàng). Vui lòng chuyển khoản thủ công theo thông tin ở trên, hoặc liên hệ quầy giao dịch.</div>
