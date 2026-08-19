@@ -126,7 +126,7 @@ export function render(contentEl, filterEl) {
       const totalInterest = contracts.reduce((s, ct) => s + S.accruedInterest(ct), 0);
       return { c, contracts, totalBalance, totalInterest };
     });
-    if (onlyOverdue) enriched = enriched.filter((e) => e.contracts.some((ct) => ct.status === 'qua_han'));
+    if (onlyOverdue) enriched = enriched.filter((e) => e.contracts.some((ct) => S.effectiveContractStatus(ct) === 'qua_han'));
     if (sortMode !== 'default') {
       const [field, dir] = sortMode.split('-');
       const key = field === 'principal' ? 'totalBalance' : 'totalInterest';
@@ -136,7 +136,7 @@ export function render(contentEl, filterEl) {
     contentEl.innerHTML = `
       <div class="text-sm text-muted mb-8">${enriched.length} khách hàng</div>
       ${enriched.length ? enriched.map(({ c, contracts }) => {
-        const hasOverdue = contracts.some((ct) => ct.status === 'qua_han');
+        const hasOverdue = contracts.some((ct) => S.effectiveContractStatus(ct) === 'qua_han');
         return `
         <div class="card card-pad mb-8">
           <div class="flex items-center gap-6 mb-8" style="flex-wrap:wrap">
@@ -250,6 +250,10 @@ export function openCustomerDetail(customerId, { readOnly = false } = {}) {
       <div class="oc-line"><span>CCCD</span><b>${c.cccd}</b></div>
       <div class="oc-line"><span>SĐT</span><b>${c.phone ? `<a href="tel:${c.phone.replace(/\s/g, '')}" style="color:var(--color-primary)">${icon('phone', 'icon-sm')} ${c.phone}</a>` : '—'}</b></div>
       <div class="oc-line" style="align-items:flex-start"><span>Địa chỉ</span><b style="text-align:right;max-width:65%">${c.address || [c.xom, c.thon, c.tinh].filter(Boolean).join(', ') || '—'}</b></div>
+      ${c.mustChangePassword && c.tempPassword ? `
+      <div class="oc-line"><span>Mật khẩu hiện tại</span><b style="color:var(--color-primary)">${c.tempPassword}</b></div>
+      <div class="field-hint">Khách chưa đăng nhập lần nào (hoặc đã đăng nhập nhưng chưa đổi mật khẩu) nên vẫn xem được mật khẩu này để đưa cho khách.</div>
+      ` : !readOnly ? `<div class="field-hint">Khách đã tự đổi mật khẩu — không thể xem lại, dùng nút "Cấp lại mật khẩu" nếu cần đặt mật khẩu mới.</div>` : ''}
       ${!readOnly ? `
       <div class="flex gap-8 mt-16 mb-16">
         <button class="btn btn-outline btn-sm" id="btn-reset-pw">${icon('key', 'icon-sm')} Cấp lại mật khẩu</button>
@@ -297,7 +301,7 @@ function contractAmountsHtml(ct) {
 
 /** Dòng hợp đồng gọn — chỉ mã + trạng thái + gốc/lãi, bấm vào mới ra đầy đủ chi tiết (openContractView). */
 function contractRowCompact(ct) {
-  const status = S.CONTRACT_STATUS_MAP[ct.status];
+  const status = S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(ct)];
   return `
     <div class="list-row" data-view-contract="${ct.id}" data-customer-id="${ct.customerId}" style="cursor:pointer;padding:8px 0">
       <div class="row-main">
@@ -321,14 +325,14 @@ function buildSmsLink(customer, contract, accrued) {
  * tại đây (không có ô nhập/nút "Sửa") — muốn cập nhật thì nhập lại file Excel
  * mới nhất, hệ thống tự khớp đúng hợp đồng theo Số HĐTD.
  */
-function openContractView(customerId, contract, { readOnly = false } = {}) {
+export function openContractView(customerId, contract, { readOnly = false } = {}) {
   const customer = S.getCustomer(customerId);
-  const status = S.CONTRACT_STATUS_MAP[contract.status];
+  const status = S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(contract)];
   const d = daysUntil(contract.dueDate);
   const interestPaidUntil = contract.interestPaidUntil || contract.disbursedDate;
   const interestDays = Math.max(0, -daysUntil(interestPaidUntil));
   const accrued = S.accruedInterest(contract);
-  const canPay = contract.status !== 'da_tat_toan';
+  const canPay = S.effectiveContractStatus(contract) !== 'da_tat_toan';
 
   const close = openModal({
     title: `Hợp đồng ${contract.code}`,

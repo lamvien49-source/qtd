@@ -15,12 +15,12 @@ export function render(contentEl, filterEl, params) {
   const contract = S.getContract(params.id);
   if (!contract) { contentEl.innerHTML = `<div class="card card-pad"><p>Không tìm thấy hợp đồng.</p></div>`; return; }
   const customer = S.getCustomer(contract.customerId);
-  const status = S.CONTRACT_STATUS_MAP[contract.status];
+  const status = S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(contract)];
   const d = daysUntil(contract.dueDate);
   const interestPaidUntil = contract.interestPaidUntil || contract.disbursedDate;
   const interestDays = Math.max(0, -daysUntil(interestPaidUntil));
   const accrued = S.accruedInterest(contract);
-  const canPay = contract.status !== 'da_tat_toan';
+  const canPay = S.effectiveContractStatus(contract) !== 'da_tat_toan';
 
   contentEl.innerHTML = `
     <div class="card card-pad mb-16">

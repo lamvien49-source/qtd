@@ -6,7 +6,7 @@
 
 Một cổng thông tin cho quỹ tín dụng, gồm:
 
-- **Phía khách hàng**: đăng nhập bằng **số CCCD hoặc số điện thoại** + mật khẩu (admin cấp sẵn, bắt buộc đổi mật khẩu lần đầu) → xem hợp đồng vay của mình (dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi phát sinh đến hiện tại, hỗ trợ nhiều hợp đồng/người) → **Thanh toán**: chọn trả gốc (lãi tính cố định theo hợp đồng) hoặc trả lãi (mặc định lấy lãi phát sinh, có thể sửa — ô nhập tự có dấu chấm ngăn cách hàng nghìn khi gõ), tự tạo nội dung chuyển khoản + **mã QR VietQR** để quét chuyển tiền, bấm **"Chọn app ngân hàng để trả"** để mở bảng chọn ứng dụng có sẵn trên điện thoại (chia sẻ ảnh QR), hoặc **tải ảnh QR về máy** → gửi yêu cầu tư vấn / mở khoản vay mới.
+- **Phía khách hàng**: đăng nhập bằng **số CCCD hoặc số điện thoại** (khoảng trắng trong SĐT tự bỏ, gõ có dấu cách hay không đều đăng nhập được) + mật khẩu (admin cấp sẵn, bắt buộc đổi mật khẩu lần đầu) → xem hợp đồng vay của mình (dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi phát sinh đến hiện tại, hỗ trợ nhiều hợp đồng/người) → **Thanh toán**: chọn trả gốc (lãi tính cố định theo hợp đồng) hoặc trả lãi (mặc định lấy lãi phát sinh, có thể sửa — ô nhập tự có dấu chấm ngăn cách hàng nghìn khi gõ), tự tạo nội dung chuyển khoản + **mã QR VietQR** để quét chuyển tiền, **tải ảnh QR về máy**, hoặc bấm **"Chia sẻ ảnh QR"** để mở bảng chọn ứng dụng có sẵn trên điện thoại → gửi yêu cầu tư vấn / mở khoản vay mới.
 - **Phía quản trị** (`/#/admin`): quản lý khách hàng (nhập **1 ô địa chỉ**, hệ thống tự tách Xóm/Thôn/Tỉnh) — **đọc trực tiếp file Excel sổ theo dõi vay đang dùng (`.xls` hoặc `.xlsx`)** tải lên, tự khớp đúng cột, tự cập nhật/tạo tài khoản khách hàng, không cần thư viện ngoài. Trang **Khách hàng & Hợp đồng**: tên khách hàng luôn hiện trọn 1 dòng riêng (không bị cắt bớt dù tên dài); mỗi khách chỉ 1 hợp đồng thì hiện gọn **Gốc (= dư nợ hiện tại) / Lãi** ngang hàng với thông tin khách, bấm vào là ra thẳng chi tiết hợp đồng; khách nhiều hợp đồng thì mỗi hợp đồng 1 dòng riêng (mã hợp đồng, trạng thái, Gốc/Lãi) — **bấm vào mới ra đầy đủ chi tiết** (số tiền vay ban đầu, dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi suất, lãi đến nay, SĐT) giống hệt màn hình khách hàng, kèm nút **nhắn SMS báo lãi cho khách** ngay tại đó — **dữ liệu hợp đồng chỉ đọc, không có ô sửa** (lấy từ Excel, muốn cập nhật thì nhập lại file mới). Có thể **lọc Thôn/Xóm chọn nhiều mục cùng lúc** và **sắp xếp theo Gốc/Lãi tăng dần-giảm dần**. Số điện thoại bấm vào **gọi luôn** (`tel:`). Trang **Tổng quan** có thêm ô đếm + danh sách **hợp đồng gần đến hạn**, tiêu đề tô màu kèm số lượng để dễ chú ý. Ngoài ra: xem/xử lý yêu cầu tư vấn, chỉnh banner + thông tin quỹ tín dụng + thông tin nhận thanh toán (QR) + lãi suất mặc định khi nhập liệu.
 - **Quản lý User**: 1 trang duy nhất quản lý **toàn bộ tài khoản trong hệ thống** — cả "Use" (khách hàng) lẫn "Quản trị viên" (toàn quyền hoặc chỉ xem) — chỉ quản trị viên toàn quyền vào được. Hiện số lượng Use/Quản trị viên đã tạo, lọc theo loại tài khoản, bấm vào 1 tài khoản để xem thông tin + cấp lại mật khẩu bất cứ lúc nào. Nút **"Tạo User"** có mục chọn loại tài khoản: **Use** (CCCD/họ tên/SĐT/địa chỉ + **mật khẩu đăng nhập** — tự đặt hoặc để trống cho tự sinh, luôn hiện ra sau khi lưu để gửi cho khách; Use chỉ xem được hợp đồng của mình) hoặc **Quản trị viên** (tên đăng nhập + mật khẩu tự đặt hoặc tự sinh + chọn vai trò Toàn quyền/Chỉ xem — chọn "Chỉ xem" sẽ hiện thêm mục **phân quyền theo Thôn/Xóm** ngay trong form, các Xóm hiển thị dạng nút bấm gọn đẹp).
 - **Menu gọn gàng trên điện thoại**: thanh menu dưới cùng chỉ hiện tối đa 3 mục chính + nút **"Thêm"** (gộp các trang ít dùng như Quản lý User/Cài đặt + Đăng xuất vào 1 bảng chọn) — tránh bị lệch/chồng chữ khi tài khoản toàn quyền có nhiều trang quản trị.
@@ -49,7 +49,7 @@ Trang **Quản lý User** (`/#/admin/nhan-vien`, chỉ quản trị viên toàn 
 - **Use** = tài khoản khách hàng (chỉ xem được hợp đồng của chính mình).
 - **Quản trị viên** = tài khoản `super` (toàn quyền) hoặc `staff` (chỉ xem, giới hạn theo địa bàn).
 
-Trang hiện **số lượng Use / Quản trị viên đã tạo**, lọc riêng từng loại, bấm vào 1 tài khoản để xem thông tin và **cấp lại mật khẩu bất cứ lúc nào**. Nút **"Tạo User"** có mục chọn loại tài khoản ngay đầu form:
+Trang hiện **số lượng Use / Quản trị viên đã tạo**, có **ô tìm kiếm** (theo tên, CCCD, SĐT, tên đăng nhập) và lọc riêng từng loại, bấm vào 1 tài khoản để xem thông tin. Với "Use" chưa từng đăng nhập (hoặc đã đăng nhập nhưng chưa đổi mật khẩu): **mật khẩu hiện tại hiện thẳng ngay trong màn xem**, không cần bấm "Cấp lại mật khẩu" mới thấy — chỉ khi khách đã tự đổi mật khẩu riêng thì mới cần cấp lại (vì lúc đó hệ thống không còn biết mật khẩu cũ). Nút **"Tạo User"** có mục chọn loại tài khoản ngay đầu form:
 - Chọn **Use** → chỉ cần CCCD + họ tên + SĐT + địa chỉ (nên nhập cả CCCD lẫn SĐT vì Use đăng nhập được bằng cả 2 số) — không có mục phân quyền vì Use chỉ xem được hợp đồng của mình.
 - Chọn **Quản trị viên** → tên đăng nhập + mật khẩu (tự đặt hoặc để trống cho tự sinh) + chọn vai trò **Toàn quyền** hoặc **Chỉ xem**. Chọn "Chỉ xem" hiện thêm mục **phân quyền theo Thôn/Xóm** ngay trong form:
   - Tích cả 1 **Thôn** → xem được mọi Xóm trong Thôn đó.
@@ -72,9 +72,18 @@ Danh sách chính giữ **gọn**, chỉ đủ để lướt nhanh — tên khá
 
 Nút **"Tạo tài khoản khách hàng"** ở trang này dùng khi cần tạo nhanh 1 tài khoản cho khách chưa có khoản vay nào (có mục đặt mật khẩu như bên Quản lý User) — làm y hệt việc chọn "Use" ở trang **Quản lý User**, chỉ là lối tắt tại đây cho tiện. **Toàn bộ khách hàng/hợp đồng nhập từ Excel đều hiện đầy đủ ở đây** — mỗi dòng dữ liệu nhập vào (dù qua Excel hay tạo tay) đều tự có tài khoản đăng nhập ngay lập tức, không có khái niệm "chưa có tài khoản" bị ẩn đi.
 
-## Cảnh báo gần đến hạn
+## Trạng thái hợp đồng — tự tính theo dư nợ + ngày đến hạn
 
-Trang **Tổng quan** (cả quản trị viên và nhân viên) có thêm ô đếm + danh sách **"Gần đến hạn"** — các hợp đồng còn tối đa 15 ngày nữa tới ngày đến hạn (chưa quá hạn), cạnh ô hợp đồng quá hạn, để chủ động nhắc khách trước khi trễ hạn. Cả 2 tiêu đề "Hợp đồng quá hạn" và "Gần đến hạn" đều tô màu (đỏ/cam) kèm số lượng ngay trong tiêu đề (VD: "Hợp đồng quá hạn (05)") để dễ chú ý. Nhân viên chỉ thấy hợp đồng thuộc Thôn/Xóm được gán, giống mọi số liệu khác trên trang này.
+Vì file Excel thật không có cột trạng thái nào, hệ thống **không dựa vào trạng thái lưu sẵn** để xác định "Đang vay/Quá hạn/Đã tất toán" nữa mà **tự tính lại mỗi lần hiển thị**, dựa trên đúng 2 dữ liệu luôn có sẵn:
+- **Đã tất toán**: dư nợ (Số dư) ≤ 0.
+- **Quá hạn**: còn dư nợ VÀ đã qua Ngày đáo hạn.
+- **Đang vay**: còn lại các trường hợp khác.
+
+Nhờ vậy, hợp đồng nào import từ Excel mà đã qua ngày đến hạn sẽ luôn được tính đúng là quá hạn ngay khi nhập, không cần phải có sẵn cột "trạng thái" nào trong file.
+
+## Cảnh báo gần đến hạn & Xem tất cả hợp đồng quá hạn
+
+Trang **Tổng quan** (cả quản trị viên và nhân viên) có thêm ô đếm + danh sách **"Gần đến hạn"** — các hợp đồng còn tối đa 15 ngày nữa tới ngày đến hạn (chưa quá hạn), cạnh ô hợp đồng quá hạn, để chủ động nhắc khách trước khi trễ hạn. Cả 2 tiêu đề "Hợp đồng quá hạn" và "Gần đến hạn" đều tô màu (đỏ/cam) kèm số lượng ngay trong tiêu đề (VD: "Hợp đồng quá hạn (05)") để dễ chú ý. Mỗi mục chỉ hiện trước 5 hợp đồng gần nhất; bấm **"Xem tất cả"** mở đúng danh sách đầy đủ của riêng mục đó (chỉ hợp đồng quá hạn, hoặc chỉ hợp đồng gần đến hạn — không lẫn lộn với nhau hay với toàn bộ hợp đồng khác), bấm vào 1 dòng trong danh sách đó để mở thẳng chi tiết hợp đồng luôn. Nhân viên chỉ thấy hợp đồng thuộc Thôn/Xóm được gán, giống mọi số liệu khác trên trang này.
 
 ## Thanh toán bằng mã QR (VietQR)
 

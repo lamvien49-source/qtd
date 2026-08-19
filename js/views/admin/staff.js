@@ -8,7 +8,7 @@ import { pageHeader } from '../../components/shell.js';
 import { emptyState } from '../../components/ui.js';
 import { openModal, confirmDialog } from '../../components/modal.js';
 import { toast } from '../../components/toast.js';
-import { initials, colorFor, maskCccd, formatNumber } from '../../utils.js';
+import { initials, colorFor, maskCccd, formatNumber, debounce } from '../../utils.js';
 import { openCustomerDetail } from './customers.js';
 
 export function renderHeader(headerEl) {
@@ -16,9 +16,15 @@ export function renderHeader(headerEl) {
 }
 
 let filterRole = 'all'; // 'all' | 'use' | 'admin'
+let query = '';
 
-export function render(contentEl) {
+export function render(contentEl, filterEl) {
   filterRole = 'all';
+  query = '';
+  // Ô tìm kiếm nằm ở filterEl (không bị vẽ lại cùng danh sách) để không mất
+  // focus/con trỏ mỗi khi gõ — giống cách trang Khách hàng & Hợp đồng làm.
+  filterEl.innerHTML = `<div style="padding:10px 14px 0"><div class="search-box mb-8">${icon('search', 'icon-sm')}<input id="search-input" placeholder="Tìm theo tên, CCCD, SĐT, tên đăng nhập..." value=""/></div></div>`;
+  filterEl.querySelector('#search-input').addEventListener('input', debounce((e) => { query = e.target.value; draw(contentEl); }, 200));
   draw(contentEl);
 }
 
@@ -33,9 +39,15 @@ function draw(contentEl) {
   const lockedCount = customers.filter((c) => S.isCustomerLocked(c)).length;
   const tree = S.thonXomTree();
 
-  const rows = [];
+  let rows = [];
   if (filterRole !== 'admin') customers.forEach((c) => rows.push({ kind: 'use', data: c }));
   if (filterRole !== 'use') admins.forEach((a) => rows.push({ kind: 'admin', data: a }));
+  if (query.trim()) {
+    const q = query.trim().toLowerCase();
+    rows = rows.filter(({ kind, data }) => kind === 'use'
+      ? data.name.toLowerCase().includes(q) || data.cccd.includes(q) || (data.phone || '').includes(q)
+      : data.name.toLowerCase().includes(q) || data.username.toLowerCase().includes(q));
+  }
 
   contentEl.innerHTML = `
     <div class="grid-2 mb-16">
@@ -64,7 +76,7 @@ function draw(contentEl) {
     <div class="card card-pad">
       <div class="text-sm text-muted mb-8">${rows.length} tài khoản</div>
       ${rows.length ? rows.map((r) => r.kind === 'use' ? userRowHtml(r.data) : adminRowHtml(r.data)).join('')
-        : emptyState({ iconName: 'idCard', title: 'Chưa có tài khoản nào', message: 'Bấm "Tạo User" để tạo tài khoản đầu tiên.' })}
+        : emptyState({ iconName: 'idCard', title: 'Không có tài khoản phù hợp', message: 'Bấm "Tạo User" để tạo tài khoản đầu tiên.' })}
     </div>
   `;
 

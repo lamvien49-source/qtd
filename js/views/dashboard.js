@@ -14,7 +14,7 @@ export function render(contentEl) {
   const org = S.getOrg();
   const contracts = S.listContractsByCustomer(customer.id);
   const total = S.customerOutstandingTotal(customer.id);
-  const active = contracts.filter((c) => c.status !== 'da_tat_toan');
+  const active = contracts.filter((c) => S.effectiveContractStatus(c) !== 'da_tat_toan');
 
   contentEl.innerHTML = `
     ${org.bannerEnabled ? `
@@ -39,10 +39,10 @@ export function render(contentEl) {
     </div>
 
     ${contracts.length ? contracts.map((c) => {
-      const status = S.CONTRACT_STATUS_MAP[c.status];
+      const status = S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(c)];
       const d = daysUntil(c.dueDate);
       let dueNote = '';
-      if (c.status !== 'da_tat_toan') {
+      if (S.effectiveContractStatus(c) !== 'da_tat_toan') {
         dueNote = d < 0 ? `<span class="text-danger">Quá hạn ${Math.abs(d)} ngày</span>` : `<span class="text-muted">Còn ${d} ngày đến hạn</span>`;
       }
       return `

@@ -158,8 +158,23 @@ export function getContract(id) { return state.contracts.find((c) => c.id === id
 
 export function customerOutstandingTotal(customerId) {
   return listContractsByCustomer(customerId)
-    .filter((c) => c.status !== 'da_tat_toan')
+    .filter((c) => effectiveContractStatus(c) !== 'da_tat_toan')
     .reduce((s, c) => s + c.balance, 0);
+}
+
+/**
+ * Trạng thái THỰC TẾ của hợp đồng — tính trực tiếp từ dư nợ + ngày đến hạn,
+ * không phụ thuộc trường "status" lưu sẵn (file Excel thật không có cột
+ * trạng thái nên trường đó luôn là 'dang_vay' lúc nhập, không tự cập nhật
+ * theo thời gian). Coi là:
+ * - "Đã tất toán" nếu dư nợ ≤ 0.
+ * - "Quá hạn" nếu còn dư nợ và đã qua ngày đến hạn.
+ * - "Đang vay" các trường hợp còn lại.
+ */
+export function effectiveContractStatus(contract, asOf = new Date()) {
+  if ((contract.balance || 0) <= 0) return 'da_tat_toan';
+  if (daysBetween(new Date(contract.dueDate), asOf) > 0) return 'qua_han';
+  return 'dang_vay';
 }
 
 /**
@@ -167,7 +182,7 @@ export function customerOutstandingTotal(customerId) {
  * Công thức: Số dư × số ngày × lãi suất năm / 365
  */
 export function accruedInterest(contract, asOf = new Date()) {
-  if (contract.status === 'da_tat_toan') return 0;
+  if (effectiveContractStatus(contract, asOf) === 'da_tat_toan') return 0;
   const from = contract.interestPaidUntil || contract.disbursedDate;
   const days = Math.max(0, daysBetween(new Date(from), asOf));
   return Math.round(contract.balance * days * (contract.interestRate / 100) / 365);
@@ -216,10 +231,11 @@ export async function adminResetCustomerPassword(customerId) {
 
 export async function upsertCustomer({ cccd, name, phone, address, password }) {
   const parsed = address != null ? parseAddress(address) : null;
+  const phoneClean = phone != null ? String(phone).replace(/\s/g, '') : phone;
   let c = findCustomerByCccd(cccd);
   if (c) {
     c.name = name || c.name;
-    c.phone = phone || c.phone;
+    c.phone = phoneClean || c.phone;
     if (address) { c.address = address; Object.assign(c, parsed); }
     notify();
     return { customer: c, isNew: false, tempPassword: null };
@@ -227,7 +243,7 @@ export async function upsertCustomer({ cccd, name, phone, address, password }) {
   const temp = password && password.trim() ? password.trim() : genTempPassword();
   const cred = await makeCredential(temp);
   c = {
-    id: genId('cust'), cccd: String(cccd).trim(), name, phone: phone || '',
+    id: genId('cust'), cccd: String(cccd).trim(), name, phone: phoneClean || '',
     address: address || '', ...(parsed || { xom: '', thon: '', xa: '', tinh: '' }),
     salt: cred.salt, hash: cred.hash, mustChangePassword: true, tempPassword: temp,
     failedAttempts: 0, lockedUntil: null, createdAt: new Date().toISOString(),
