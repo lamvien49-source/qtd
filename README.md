@@ -7,7 +7,7 @@
 Một cổng thông tin cho quỹ tín dụng, gồm:
 
 - **Phía khách hàng**: đăng nhập bằng số CCCD + mật khẩu (admin cấp sẵn, bắt buộc đổi mật khẩu lần đầu) → xem hợp đồng vay của mình (dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi phát sinh đến hiện tại, hỗ trợ nhiều hợp đồng/người) → **Thanh toán**: chọn trả gốc (lãi tính cố định theo hợp đồng) hoặc trả lãi (mặc định lấy lãi phát sinh, có thể sửa), tự tạo nội dung chuyển khoản + **mã QR VietQR** để quét chuyển tiền → gửi yêu cầu tư vấn / mở khoản vay mới.
-- **Phía quản trị** (`/#/admin`): quản lý khách hàng (có Xóm/Thôn/Tỉnh) & hợp đồng — thêm thủ công hoặc **đọc trực tiếp file Excel (.xlsx)** tải lên (tự động cập nhật theo đúng file, không cần thư viện ngoài), lọc danh sách theo Thôn/Xóm và theo "có nợ quá hạn", cấp lại mật khẩu, xem/xử lý yêu cầu tư vấn, chỉnh banner + thông tin quỹ tín dụng + thông tin nhận thanh toán (QR) ngay trong app.
+- **Phía quản trị** (`/#/admin`): quản lý khách hàng (nhập **1 ô địa chỉ**, hệ thống tự tách Xóm/Thôn/Tỉnh) & hợp đồng — thêm thủ công hoặc **đọc trực tiếp file Excel (.xlsx)** tải lên (tự động cập nhật theo đúng file, không cần thư viện ngoài), lọc danh sách theo Thôn/Xóm và theo "có nợ quá hạn", bấm vào hợp đồng xem đầy đủ (số tiền gốc, dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi đến nay) giống hệt màn hình khách hàng, số điện thoại bấm vào **gọi luôn** (`tel:`), cấp lại mật khẩu, xem/xử lý yêu cầu tư vấn, chỉnh banner + thông tin quỹ tín dụng + thông tin nhận thanh toán (QR) + **lãi suất/kỳ hạn mặc định khi nhập liệu** ngay trong app.
 - **Phân quyền nhân viên**: tài khoản quản trị viên (`super`) toàn quyền, có thể tạo tài khoản **nhân viên** (`staff`) chỉ xem (không sửa/xóa) và chỉ thấy khách hàng/hợp đồng/yêu cầu thuộc các **Thôn được gán riêng** — dùng cho việc theo dõi nợ quá hạn theo địa bàn phụ trách.
 
 ## Tài khoản dùng thử
@@ -27,15 +27,23 @@ Mở `http://localhost:8080`.
 
 ## Nhập dữ liệu từ Excel
 
-Trang **Khách hàng & Hợp đồng** (quản trị viên) → **"Nhập từ Excel"** → chọn file `.xlsx` có các cột theo đúng thứ tự (dòng đầu là tiêu đề sẽ tự bỏ qua):
+Trang **Khách hàng & Hợp đồng** (quản trị viên) → **"Nhập từ Excel"** → chọn file `.xlsx` đúng theo cột trong file mẫu thật của quỹ (dòng đầu là tiêu đề sẽ tự bỏ qua):
 
+**Bắt buộc (đúng theo file mẫu):**
 ```
-CCCD | Họ tên | SĐT | Xóm | Thôn | Tỉnh | Mã hợp đồng | Số tiền vay | Ngày vay | Ngày đến hạn | Lãi suất | Dư nợ | Đã trả lãi đến ngày
+Người nhận nợ (Họ tên) | Số CMND/CCCD | Địa chỉ | Ngày nhận nợ | Thu lãi đến ngày | Số dư
+```
+
+**Tùy chọn (thêm vào cuối nếu có, không có cũng nhập được):**
+```
+SĐT | Mã hợp đồng | Số tiền vay | Ngày đến hạn | Lãi suất
 ```
 
 - File được đọc **trực tiếp trong trình duyệt** (giải nén ZIP + đọc XML bằng API có sẵn của trình duyệt), không cần thư viện ngoài, không cần tải file lên server nào.
 - Chỉ đọc được **.xlsx** (Excel 2007 trở lên). File `.xls` cũ cần lưu lại dưới dạng `.xlsx` trước.
 - Ô ngày tháng đọc đúng cả khi Excel lưu dạng ngày thật (số serial) lẫn dạng chữ `dd/mm/yyyy`.
+- **Cột "Địa chỉ"**: chỉ cần 1 ô địa chỉ đầy đủ (vd: `Xóm 2, thôn Bình Bắc, xã Bình Sơn, tỉnh Quảng Ngãi`) — hệ thống **tự tách theo dấu phẩy** thành Xóm/Thôn/Tỉnh ngay khi nhập, không cần chia sẵn thành nhiều cột. Nhờ vậy quản trị viên lọc theo Thôn/Xóm và gán quyền cho nhân viên theo địa bàn được ngay.
+- Các trường tùy chọn để trống sẽ **tự tính**: Mã hợp đồng tự sinh (`HD-{CCCD}-{số thứ tự}`), Số tiền vay mặc định = Số dư, Ngày đến hạn mặc định = Ngày nhận nợ + kỳ hạn mặc định, Lãi suất mặc định lấy theo **Cài đặt → Mặc định cho hợp đồng khi nhập liệu**.
 - Khách hàng mới sẽ được tự tạo tài khoản (CCCD + mật khẩu tạm), hiển thị ngay sau khi nhập để gửi cho khách hàng.
 - Vẫn có lựa chọn "dán dữ liệu thủ công" (copy từ Excel) làm phương án dự phòng.
 

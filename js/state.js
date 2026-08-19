@@ -6,7 +6,7 @@
 // ============================================================
 import { genId, mulberry32, randInt, addDays, daysBetween } from './utils.js';
 
-export const STORAGE_KEY = 'qtd_demo_v2';
+export const STORAGE_KEY = 'qtd_demo_v3';
 
 export const REQUEST_TYPE = [
   { id: 'vay_moi', label: 'Yêu cầu mở khoản vay mới' },
@@ -86,6 +86,33 @@ async function verifyCredential(plainPassword, salt, hash) {
 // ------------------------------------------------------------
 export function getOrg() { return state.org; }
 export function updateOrg(patch) { Object.assign(state.org, patch); notify(); }
+
+// ------------------------------------------------------------
+// Tách địa chỉ dạng "Xóm 01, thôn Bình Nguyên, xã Bình Sơn, tỉnh Quảng Ngãi"
+// thành từng phần theo từ khóa đầu câu — để admin lọc/phân quyền theo Thôn/Xóm
+// mà không cần người nhập liệu tự tách sẵn.
+// ------------------------------------------------------------
+export function parseAddress(raw) {
+  const text = String(raw || '').trim();
+  const withoutNote = text.replace(/\([^)]*\)/g, ''); // bỏ ghi chú kiểu "(Trước đây là: ...)"
+  const parts = withoutNote.split(',').map((s) => s.trim()).filter(Boolean);
+  const result = { xom: '', thon: '', xa: '', tinh: '' };
+  const rest = [];
+  for (const p of parts) {
+    const low = p.toLowerCase();
+    if (low.startsWith('xóm') || low.startsWith('xom')) result.xom = p;
+    else if (low.startsWith('thôn') || low.startsWith('thon')) result.thon = p;
+    else if (low.startsWith('xã') || low.startsWith('xa ') || low.startsWith('phường') || low.startsWith('thị trấn') || low.startsWith('huyện')) result.xa = p;
+    else if (low.startsWith('tỉnh') || low.startsWith('tp') || low.startsWith('thành phố')) result.tinh = p;
+    else rest.push(p);
+  }
+  // Dự phòng theo vị trí nếu không nhận ra từ khóa (địa chỉ ghi tắt, không tiền tố)
+  if (!result.tinh && parts.length) result.tinh = parts[parts.length - 1];
+  if (!result.xa && rest.length) result.xa = rest.shift();
+  if (!result.thon && parts.length >= 2) result.thon = parts[1];
+  if (!result.xom && parts.length >= 1) result.xom = parts[0];
+  return result;
+}
 
 // ------------------------------------------------------------
 // Khách hàng
@@ -169,14 +196,13 @@ export async function adminResetCustomerPassword(customerId) {
   return temp;
 }
 
-export async function upsertCustomer({ cccd, name, phone, xom, thon, tinh }) {
+export async function upsertCustomer({ cccd, name, phone, address }) {
+  const parsed = address != null ? parseAddress(address) : null;
   let c = findCustomerByCccd(cccd);
   if (c) {
     c.name = name || c.name;
     c.phone = phone || c.phone;
-    if (xom) c.xom = xom;
-    if (thon) c.thon = thon;
-    if (tinh) c.tinh = tinh;
+    if (address) { c.address = address; Object.assign(c, parsed); }
     notify();
     return { customer: c, isNew: false, tempPassword: null };
   }
@@ -184,7 +210,7 @@ export async function upsertCustomer({ cccd, name, phone, xom, thon, tinh }) {
   const cred = await makeCredential(temp);
   c = {
     id: genId('cust'), cccd: String(cccd).trim(), name, phone: phone || '',
-    xom: xom || '', thon: thon || '', tinh: tinh || '',
+    address: address || '', ...(parsed || { xom: '', thon: '', xa: '', tinh: '' }),
     salt: cred.salt, hash: cred.hash, mustChangePassword: true, tempPassword: temp,
     failedAttempts: 0, lockedUntil: null, createdAt: new Date().toISOString(),
   };
@@ -202,13 +228,27 @@ export function distinctXom(thon) {
   return [...new Set(list.map((c) => c.xom).filter(Boolean))].sort();
 }
 
+/** Sinh mã hợp đồng tự động khi không có sẵn (không bắt buộc phải nhập). */
+function autoContractCode(cccd) {
+  const n = state.contracts.filter((c) => c.autoCode).length + 1;
+  return `HD-${cccd}-${String(n).padStart(3, '0')}`;
+}
+
 export function upsertContract({ customerId, code, principal, disbursedDate, dueDate, interestRate, balance, status, termMonths, interestPaidUntil }) {
-  let ct = state.contracts.find((c) => c.code === code);
+  const customer = getCustomer(customerId);
+  const bal = Number(balance) || 0;
+  const termM = Number(termMonths) || state.org.defaultTermMonths || 12;
+  let ct = code ? state.contracts.find((c) => c.code === code) : null;
   const data = {
-    customerId, code, principal: Number(principal) || 0,
-    disbursedDate, dueDate, interestRate: Number(interestRate) || 0,
-    balance: Number(balance) || 0, status: status || 'dang_vay',
-    termMonths: Number(termMonths) || null,
+    customerId,
+    code: code || (ct ? ct.code : autoContractCode(customer?.cccd || customerId)),
+    autoCode: !code,
+    principal: principal != null && principal !== '' ? Number(principal) || 0 : bal, // mặc định = dư nợ nếu không có số tiền vay gốc
+    disbursedDate,
+    dueDate: dueDate || addDays(new Date(disbursedDate), termM * 30).toISOString().slice(0, 10),
+    interestRate: interestRate != null && interestRate !== '' ? Number(interestRate) || 0 : (state.org.defaultInterestRate || 0),
+    balance: bal, status: status || 'dang_vay',
+    termMonths: termM,
     interestPaidUntil: interestPaidUntil || disbursedDate,
   };
   if (ct) { Object.assign(ct, data); }
@@ -229,8 +269,9 @@ export function deleteContract(id) {
 
 // ------------------------------------------------------------
 // Nhập dữ liệu từ bảng (đọc trực tiếp file .xlsx hoặc dán dữ liệu copy từ Excel)
-// Định dạng mỗi dòng (phân cách bằng Tab hoặc dấu phẩy):
-// CCCD | Họ tên | SĐT | Xóm | Thôn | Tỉnh | Mã hợp đồng | Số tiền vay | Ngày vay | Ngày đến hạn | Lãi suất(%) | Dư nợ | Đã trả lãi đến ngày
+// Cột bắt buộc, đúng theo mẫu file quản lý sẵn có — Người nhận nợ | Số CMND/CCCD |
+// Địa chỉ | Ngày nhận nợ | Thu lãi đến ngày | Số dư (địa chỉ tự tách Xóm/Thôn/Tỉnh).
+// Cột tùy chọn thêm vào cuối nếu có — SĐT | Mã hợp đồng | Số tiền vay | Ngày đến hạn | Lãi suất
 // ------------------------------------------------------------
 export function parseVNNumber(str) {
   const cleaned = String(str || '').replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
@@ -254,34 +295,34 @@ export function parseVNDate(str) {
   return Number.isNaN(dt.getTime()) ? '' : dt.toISOString().slice(0, 10);
 }
 
-const HEADER_HINTS = ['cccd', 'cmnd', 'họ tên', 'ho ten', 'mã hợp đồng', 'ma hop dong'];
+const HEADER_HINTS = ['cccd', 'cmnd', 'người nhận nợ', 'nguoi nhan no', 'họ tên', 'ho ten'];
 export async function importFromPastedTable(text) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const result = { createdCustomers: [], updatedCustomers: 0, contracts: 0, skipped: 0, errors: [] };
   for (const line of lines) {
     const cells = line.includes('\t') ? line.split('\t') : line.split(',');
     if (cells.length < 2) { result.skipped++; continue; }
-    const first = cells[0].toLowerCase();
-    if (HEADER_HINTS.some((h) => first.includes(h))) continue; // bỏ qua dòng tiêu đề
+    const headerCheck = (cells[0] + ' ' + (cells[1] || '')).toLowerCase();
+    if (HEADER_HINTS.some((h) => headerCheck.includes(h))) continue; // bỏ qua dòng tiêu đề
 
-    const [cccd, name, phone, xom, thon, tinh, code, principal, disbursedDate, dueDate, interestRate, balance, interestPaidUntil] = cells.map((c) => c.trim());
-    if (!cccd || !/^\d{9,12}$/.test(cccd.replace(/\s/g, ''))) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
+    const [name, cccdRaw, address, disbursedDate, interestPaidUntil, balance, phone, code, principal, dueDate, interestRate] = cells.map((c) => c.trim());
+    const cccd = (cccdRaw || '').replace(/\s/g, '');
+    if (!cccd || !/^\d{9,12}$/.test(cccd)) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
 
-    const { customer, isNew, tempPassword } = await upsertCustomer({ cccd: cccd.replace(/\s/g, ''), name, phone, xom, thon, tinh });
+    const { customer, isNew, tempPassword } = await upsertCustomer({ cccd, name, phone, address });
     if (isNew) result.createdCustomers.push({ cccd: customer.cccd, name: customer.name, tempPassword });
     else result.updatedCustomers++;
 
-    if (code) {
-      const disbursed = parseVNDate(disbursedDate) || new Date().toISOString().slice(0, 10);
-      upsertContract({
-        customerId: customer.id, code,
-        principal: parseVNNumber(principal), disbursedDate: disbursed,
-        dueDate: parseVNDate(dueDate), interestRate: parseVNNumber(interestRate),
-        balance: parseVNNumber(balance || principal), status: 'dang_vay',
-        interestPaidUntil: parseVNDate(interestPaidUntil) || disbursed,
-      });
-      result.contracts++;
-    }
+    const disbursed = parseVNDate(disbursedDate) || new Date().toISOString().slice(0, 10);
+    upsertContract({
+      customerId: customer.id, code: code || null,
+      principal: principal ? parseVNNumber(principal) : null, disbursedDate: disbursed,
+      dueDate: dueDate ? parseVNDate(dueDate) : null,
+      interestRate: interestRate ? parseVNNumber(interestRate) : null,
+      balance: parseVNNumber(balance), status: 'dang_vay',
+      interestPaidUntil: parseVNDate(interestPaidUntil) || disbursed,
+    });
+    result.contracts++;
   }
   return result;
 }
@@ -389,6 +430,9 @@ async function seedDemoData() {
     bankName: 'Ngân hàng Hợp tác xã Việt Nam (Co-op Bank)',
     bankAccountNo: '5200000000825012',
     bankAccountName: 'QUY TIN DUNG NHAN DAN BINH NGUYEN',
+    // Dùng khi file/dữ liệu nhập vào không có sẵn lãi suất hoặc kỳ hạn riêng cho từng hợp đồng
+    defaultInterestRate: 9,
+    defaultTermMonths: 12,
   };
 
   const adminCred = await makeCredential('Admin@123');
@@ -399,17 +443,17 @@ async function seedDemoData() {
   ];
 
   const demoDefs = [
-    ['079300012345', 'Trần Văn Mẫu', '0901 000 001', 'Xóm A', 'Thôn 1', 'Tỉnh Demo'],
-    ['079300012346', 'Nguyễn Thị Mẫu', '0901 000 002', 'Xóm B', 'Thôn 1', 'Tỉnh Demo'],
-    ['079300012347', 'Lê Văn Ví Dụ', '0901 000 003', 'Xóm A', 'Thôn 2', 'Tỉnh Demo'],
-    ['079300012348', 'Phạm Thị Ví Dụ', '0901 000 004', 'Xóm B', 'Thôn 2', 'Tỉnh Demo'],
+    ['079300012345', 'Trần Văn Mẫu', '0901 000 001', 'Xóm A, Thôn 1, Tỉnh Demo'],
+    ['079300012346', 'Nguyễn Thị Mẫu', '0901 000 002', 'Xóm B, Thôn 1, Tỉnh Demo'],
+    ['079300012347', 'Lê Văn Ví Dụ', '0901 000 003', 'Xóm A, Thôn 2, Tỉnh Demo'],
+    ['079300012348', 'Phạm Thị Ví Dụ', '0901 000 004', 'Xóm B, Thôn 2, Tỉnh Demo'],
   ];
   const customers = [];
-  for (const [cccd, name, phone, xom, thon, tinh] of demoDefs) {
+  for (const [cccd, name, phone, address] of demoDefs) {
     const temp = 'Demo@123';
     const cred = await makeCredential(temp);
     customers.push({
-      id: genId('cust'), cccd, name, phone, xom, thon, tinh,
+      id: genId('cust'), cccd, name, phone, address, ...parseAddress(address),
       ...cred, mustChangePassword: true, tempPassword: temp,
       failedAttempts: 0, lockedUntil: null, createdAt: new Date().toISOString(),
     });

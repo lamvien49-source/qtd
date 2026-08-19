@@ -4,7 +4,7 @@ import { pageHeader } from '../../components/shell.js';
 import { emptyState, statusBadge, openPicker, pillSelectHtml } from '../../components/ui.js';
 import { openModal, confirmDialog } from '../../components/modal.js';
 import { toast } from '../../components/toast.js';
-import { formatVND, formatDate, maskCccd, colorFor, initials, debounce } from '../../utils.js';
+import { formatVND, formatDate, daysUntil, maskCccd, colorFor, initials, debounce } from '../../utils.js';
 import { readXlsxFirstSheet, rowsToTsv } from '../../lib/xlsxLite.js';
 
 export function renderHeader(headerEl) {
@@ -107,7 +107,7 @@ export function render(contentEl, filterEl) {
             <div class="row-main">
               <div class="row-title">${c.name}${hasOverdue ? ` <span class="badge badge-red">Quá hạn</span>` : ''}</div>
               <div class="row-sub">${maskCccd(c.cccd)} · ${c.phone || 'Chưa có SĐT'} · ${contracts.length} hợp đồng</div>
-              <div class="row-sub">${[c.xom, c.thon, c.tinh].filter(Boolean).join(', ') || 'Chưa có địa bàn'}</div>
+              <div class="row-sub">${[c.xom, c.thon, c.tinh].filter(Boolean).join(', ') || c.address || 'Chưa có địa bàn'}</div>
             </div>
             <div class="row-end">
               <div class="amount">${formatVND(total)}</div>
@@ -134,11 +134,11 @@ function openCustomerForm(customer) {
         <div class="field"><label>Số CCCD</label><input name="cccd" required pattern="\\d{9,12}" value="${customer ? customer.cccd : ''}" ${isEdit ? 'readonly' : ''}/></div>
         <div class="field"><label>Họ tên</label><input name="name" required value="${customer ? esc(customer.name) : ''}"/></div>
         <div class="field"><label>Số điện thoại</label><input name="phone" value="${customer ? esc(customer.phone) : ''}"/></div>
-        <div class="field-row">
-          <div class="field"><label>Xóm</label><input name="xom" value="${customer ? esc(customer.xom) : ''}" placeholder="VD: Xóm 1"/></div>
-          <div class="field"><label>Thôn</label><input name="thon" value="${customer ? esc(customer.thon) : ''}" placeholder="VD: Thôn 1"/></div>
+        <div class="field">
+          <label>Địa chỉ</label>
+          <input name="address" value="${customer ? esc(customer.address) : ''}" placeholder="VD: Xóm 01, thôn Bình Nguyên, xã Bình Sơn, tỉnh Quảng Ngãi"/>
+          <div class="field-hint">Hệ thống tự tách Xóm/Thôn/Tỉnh theo dấu phẩy để lọc & phân quyền, không cần nhập riêng từng ô.</div>
         </div>
-        <div class="field"><label>Tỉnh</label><input name="tinh" value="${customer ? esc(customer.tinh) : ''}"/></div>
         ${!isEdit ? `<div class="field-hint">Hệ thống sẽ tự tạo mật khẩu tạm cho khách hàng, hiển thị sau khi lưu.</div>` : ''}
       </form>
     `,
@@ -149,8 +149,7 @@ function openCustomerForm(customer) {
         if (!form.reportValidity()) return;
         const fd = new FormData(form);
         const res = await S.upsertCustomer({
-          cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'),
-          xom: fd.get('xom'), thon: fd.get('thon'), tinh: fd.get('tinh'),
+          cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), address: fd.get('address'),
         });
         closeFn();
         if (res.isNew) {
@@ -188,23 +187,28 @@ function openCustomerDetail(customerId, { readOnly = false } = {}) {
     title: c.name,
     bodyHtml: `
       <div class="oc-line"><span>CCCD</span><b>${c.cccd}</b></div>
-      <div class="oc-line"><span>SĐT</span><b>${c.phone || '—'}</b></div>
-      <div class="oc-line"><span>Địa bàn</span><b>${[c.xom, c.thon, c.tinh].filter(Boolean).join(', ') || '—'}</b></div>
+      <div class="oc-line"><span>SĐT</span><b>${c.phone ? `<a href="tel:${c.phone.replace(/\s/g, '')}" style="color:var(--color-primary)">${icon('phone', 'icon-sm')} ${c.phone}</a>` : '—'}</b></div>
+      <div class="oc-line" style="align-items:flex-start"><span>Địa chỉ</span><b style="text-align:right;max-width:65%">${c.address || [c.xom, c.thon, c.tinh].filter(Boolean).join(', ') || '—'}</b></div>
       ${!readOnly ? `
       <div class="flex gap-8 mt-16 mb-16">
         <button class="btn btn-outline btn-sm" id="btn-reset-pw">${icon('key', 'icon-sm')} Cấp lại mật khẩu</button>
+        <button class="btn btn-outline btn-sm" id="btn-edit-cust">${icon('edit', 'icon-sm')} Sửa</button>
         <button class="btn btn-outline btn-sm" id="btn-add-contract">${icon('plus', 'icon-sm')} Thêm hợp đồng</button>
         <button class="btn btn-danger-outline btn-sm" id="btn-del-cust">${icon('trash', 'icon-sm')}</button>
       </div>` : '<div class="mt-16"></div>'}
       <div class="section-head"><h2 style="font-size:14px">Hợp đồng (${contracts.length})</h2></div>
-      <div id="contract-list">${contracts.map((ct) => contractRow(ct, readOnly)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng.</p>'}</div>
+      <div id="contract-list">${contracts.map((ct) => contractRow(ct)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng.</p>'}</div>
     `,
     onMount(sheet, closeFn) {
+      sheet.querySelectorAll('[data-view-contract]').forEach((btn) => {
+        btn.addEventListener('click', () => { closeFn(); openContractView(customerId, S.getContract(btn.dataset.viewContract), { readOnly }); });
+      });
       if (readOnly) return;
       sheet.querySelector('#btn-reset-pw').addEventListener('click', async () => {
         const temp = await S.adminResetCustomerPassword(customerId);
         showCredential(c, temp);
       });
+      sheet.querySelector('#btn-edit-cust').addEventListener('click', () => { closeFn(); openCustomerForm(c); });
       sheet.querySelector('#btn-add-contract').addEventListener('click', () => { closeFn(); openContractForm(customerId); });
       sheet.querySelector('#btn-del-cust').addEventListener('click', () => {
         confirmDialog({
@@ -213,18 +217,15 @@ function openCustomerDetail(customerId, { readOnly = false } = {}) {
           onConfirm: () => { S.deleteCustomer(customerId); closeFn(); toast('Đã xóa khách hàng', 'success'); window.__qtdRedrawCustomers?.(); },
         });
       });
-      sheet.querySelectorAll('[data-edit-contract]').forEach((btn) => {
-        btn.addEventListener('click', () => { closeFn(); openContractForm(customerId, S.getContract(btn.dataset.editContract)); });
-      });
     },
   });
 }
 
-function contractRow(ct, readOnly) {
+function contractRow(ct) {
   const status = S.CONTRACT_STATUS_MAP[ct.status];
   const interest = S.accruedInterest(ct);
   return `
-    <div class="list-row" ${readOnly ? '' : `data-edit-contract="${ct.id}" style="cursor:pointer"`}>
+    <div class="list-row" data-view-contract="${ct.id}" style="cursor:pointer">
       <div class="row-main">
         <div class="row-title">${ct.code}</div>
         <div class="row-sub">Vay ${formatVND(ct.principal)} · ${formatDate(ct.disbursedDate)} → ${formatDate(ct.dueDate)}</div>
@@ -234,24 +235,69 @@ function contractRow(ct, readOnly) {
     </div>`;
 }
 
+/** Xem chi tiết hợp đồng — hiển thị đầy đủ giống hệt trang khách hàng thấy khi họ bấm vào. */
+function openContractView(customerId, contract, { readOnly = false } = {}) {
+  const status = S.CONTRACT_STATUS_MAP[contract.status];
+  const d = daysUntil(contract.dueDate);
+  const interestPaidUntil = contract.interestPaidUntil || contract.disbursedDate;
+  const interestDays = Math.max(0, -daysUntil(interestPaidUntil));
+  const accrued = S.accruedInterest(contract);
+  const canPay = contract.status !== 'da_tat_toan';
+
+  const close = openModal({
+    title: `Hợp đồng ${contract.code}`,
+    bodyHtml: `
+      <div class="flex justify-between items-center mb-10">
+        <span class="fw-700">Trạng thái</span>
+        ${statusBadge(status)}
+      </div>
+      <div class="oc-line"><span>Số tiền vay ban đầu</span><b>${formatVND(contract.principal)}</b></div>
+      <div class="oc-line"><span>Dư nợ hiện tại</span><b style="color:var(--color-primary)">${formatVND(contract.balance)}</b></div>
+      <div class="oc-line"><span>Lãi suất</span><b>${contract.interestRate}%/năm</b></div>
+      <div class="oc-line"><span>Kỳ hạn</span><b>${contract.termMonths ? contract.termMonths + ' tháng' : '—'}</b></div>
+      <div class="oc-line"><span>Ngày giải ngân (ngày vay)</span><b>${formatDate(contract.disbursedDate)}</b></div>
+      <div class="oc-line"><span>Ngày đến hạn</span><b>${formatDate(contract.dueDate)}</b></div>
+      <div class="oc-line"><span>Đã trả lãi đến ngày</span><b>${formatDate(interestPaidUntil)}</b></div>
+      ${canPay ? `
+      <div class="oc-line" style="padding-top:8px;border-top:1px dashed var(--border);margin-top:6px">
+        <span class="fw-700">Lãi đến nay</span>
+        <b style="color:var(--warning)">${formatVND(accrued)}</b>
+      </div>
+      <div class="field-hint">(${formatVND(contract.balance)} × ${interestDays} ngày × ${contract.interestRate}%/năm ÷ 365)</div>
+      <div class="field-hint ${d < 0 ? 'text-danger' : ''}" style="margin-top:6px">
+        ${d < 0 ? `${icon('alert', 'icon-sm')} Đã quá hạn ${Math.abs(d)} ngày` : `Còn ${d} ngày đến hạn thanh toán`}
+      </div>` : ''}
+    `,
+    footHtml: readOnly ? '' : `<button class="btn btn-primary btn-block" id="edit-contract">${icon('edit', 'icon-sm')} Sửa hợp đồng</button>`,
+    onMount(sheet, closeFn) {
+      const editBtn = sheet.querySelector('#edit-contract');
+      if (editBtn) editBtn.addEventListener('click', () => { closeFn(); openContractForm(customerId, contract); });
+    },
+  });
+  return close;
+}
+
 function openContractForm(customerId, contract) {
   const isEdit = !!contract;
   const close = openModal({
     title: isEdit ? `Sửa hợp đồng ${contract.code}` : 'Thêm hợp đồng vay',
     bodyHtml: `
       <form id="ctf">
-        <div class="field"><label>Mã hợp đồng</label><input name="code" required value="${contract ? contract.code : ''}" ${isEdit ? 'readonly' : ''}/></div>
+        <div class="field">
+          <label>Mã hợp đồng</label>
+          <input name="code" value="${contract ? contract.code : ''}" ${isEdit ? 'readonly' : ''} placeholder="Để trống sẽ tự sinh mã"/>
+        </div>
         <div class="field-row">
-          <div class="field"><label>Số tiền vay</label><input name="principal" type="number" min="0" step="1000000" required value="${contract ? contract.principal : ''}"/></div>
+          <div class="field"><label>Số tiền vay</label><input name="principal" type="number" min="0" step="1000000" value="${contract ? contract.principal : ''}" placeholder="Mặc định = Dư nợ"/></div>
           <div class="field"><label>Dư nợ hiện tại</label><input name="balance" type="number" min="0" step="100000" required value="${contract ? contract.balance : ''}"/></div>
         </div>
         <div class="field-row">
           <div class="field"><label>Ngày vay</label><input name="disbursedDate" type="date" required value="${contract ? contract.disbursedDate : ''}"/></div>
-          <div class="field"><label>Ngày đến hạn</label><input name="dueDate" type="date" required value="${contract ? contract.dueDate : ''}"/></div>
+          <div class="field"><label>Ngày đến hạn</label><input name="dueDate" type="date" value="${contract ? contract.dueDate : ''}" placeholder="Tự tính nếu để trống"/></div>
         </div>
         <div class="field-row">
-          <div class="field"><label>Lãi suất (%/năm)</label><input name="interestRate" type="number" min="0" step="0.1" value="${contract ? contract.interestRate : ''}"/></div>
-          <div class="field"><label>Kỳ hạn (tháng)</label><input name="termMonths" type="number" min="1" value="${contract ? contract.termMonths || '' : ''}"/></div>
+          <div class="field"><label>Lãi suất (%/năm)</label><input name="interestRate" type="number" min="0" step="0.1" value="${contract ? contract.interestRate : ''}" placeholder="Mặc định: ${S.getOrg().defaultInterestRate}%"/></div>
+          <div class="field"><label>Kỳ hạn (tháng)</label><input name="termMonths" type="number" min="1" value="${contract ? contract.termMonths || '' : ''}" placeholder="Mặc định: ${S.getOrg().defaultTermMonths}"/></div>
         </div>
         <div class="field">
           <label>Đã trả lãi đến ngày</label>
@@ -275,7 +321,8 @@ function openContractForm(customerId, contract) {
         if (!form.reportValidity()) return;
         const fd = new FormData(form);
         S.upsertContract({
-          customerId, code: fd.get('code'), principal: fd.get('principal'), balance: fd.get('balance'),
+          customerId, code: fd.get('code') || (isEdit ? contract.code : null),
+          principal: fd.get('principal'), balance: fd.get('balance'),
           disbursedDate: fd.get('disbursedDate'), dueDate: fd.get('dueDate'),
           interestRate: fd.get('interestRate'), termMonths: fd.get('termMonths'), status: fd.get('status'),
           interestPaidUntil: fd.get('interestPaidUntil'),
@@ -295,15 +342,20 @@ function openContractForm(customerId, contract) {
   });
 }
 
-const COLUMN_ORDER_HINT = 'CCCD, Họ tên, SĐT, Xóm, Thôn, Tỉnh, Mã hợp đồng, Số tiền vay, Ngày vay, Ngày đến hạn, Lãi suất, Dư nợ, Đã trả lãi đến ngày';
+const REQUIRED_COLUMNS = 'Người nhận nợ (Họ tên), Số CMND/CCCD, Địa chỉ, Ngày nhận nợ, Thu lãi đến ngày, Số dư';
+const OPTIONAL_COLUMNS = 'SĐT, Mã hợp đồng, Số tiền vay, Ngày đến hạn, Lãi suất';
 
 function openImportModal() {
   const close = openModal({
     title: 'Nhập dữ liệu từ Excel',
     bodyHtml: `
       <p class="text-sm text-muted mb-8">
-        Chọn file Excel (<b>.xlsx</b>) có các cột theo đúng thứ tự sau (dòng đầu là tiêu đề sẽ tự bỏ qua):<br/>
-        <b>${COLUMN_ORDER_HINT}</b>
+        Chọn file Excel (<b>.xlsx</b>) — đúng theo mẫu file bạn đang quản lý, có 6 cột bắt buộc theo thứ tự sau (dòng đầu là tiêu đề sẽ tự bỏ qua):<br/>
+        <b>${REQUIRED_COLUMNS}</b>
+      </p>
+      <p class="text-sm text-muted mb-8">
+        Có thể thêm các cột sau vào cuối nếu có (không bắt buộc, thiếu sẽ tự tính/tự sinh):<br/>
+        <b>${OPTIONAL_COLUMNS}</b>
       </p>
       <div class="field">
         <input type="file" id="file-input" accept=".xlsx"/>

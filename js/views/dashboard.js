@@ -61,7 +61,7 @@ export function render(contentEl) {
 
     <div class="card card-pad mt-16">
       <div class="section-head"><h2>Liên hệ hỗ trợ</h2></div>
-      <div class="oc-line"><span>Hotline</span><b>${org.hotline}</b></div>
+      <div class="oc-line"><span>Hotline</span><b><a href="tel:${org.hotline.replace(/\s/g, '')}" style="color:var(--color-primary)">${icon('phone', 'icon-sm')} ${org.hotline}</a></b></div>
       <div class="oc-line"><span>Địa chỉ</span><b>${org.address}</b></div>
     </div>
   `;
