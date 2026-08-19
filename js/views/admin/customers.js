@@ -145,6 +145,13 @@ function openCustomerDetail(customerId) {
       sheet.querySelectorAll('[data-edit-contract]').forEach((btn) => {
         btn.addEventListener('click', () => { closeFn(); openContractForm(customerId, S.getContract(btn.dataset.editContract)); });
       });
+      sheet.querySelectorAll('[data-pay-contract]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          closeFn();
+          openPaymentForm(customerId, S.getContract(btn.dataset.payContract));
+        });
+      });
     },
   });
 }
@@ -153,13 +160,17 @@ function contractRow(ct) {
   const status = S.CONTRACT_STATUS_MAP[ct.status];
   const interest = S.accruedInterest(ct);
   return `
-    <div class="list-row" data-edit-contract="${ct.id}" style="cursor:pointer">
-      <div class="row-main">
+    <div class="list-row" style="cursor:default">
+      <div class="row-main" data-edit-contract="${ct.id}" style="cursor:pointer">
         <div class="row-title">${ct.code}</div>
         <div class="row-sub">Vay ${formatVND(ct.principal)} · ${formatDate(ct.disbursedDate)} → ${formatDate(ct.dueDate)}</div>
         <div class="row-sub">Đã trả lãi đến ${formatDate(ct.interestPaidUntil || ct.disbursedDate)}${interest > 0 ? ` · Lãi đến nay: ${formatVND(interest)}` : ''}</div>
       </div>
-      <div class="row-end"><div class="amount">${formatVND(ct.balance)}</div>${statusBadge(status)}</div>
+      <div class="row-end flex-col items-center gap-6">
+        <div class="amount">${formatVND(ct.balance)}</div>
+        ${statusBadge(status)}
+        ${ct.status !== 'da_tat_toan' ? `<button class="btn btn-primary btn-sm" data-pay-contract="${ct.id}" style="margin-top:4px">${icon('wallet', 'icon-sm')} Thu tiền</button>` : ''}
+      </div>
     </div>`;
 }
 
@@ -222,6 +233,61 @@ function openContractForm(customerId, contract) {
       });
     },
   });
+}
+
+function openPaymentForm(customerId, contract) {
+  const history = S.listPaymentsByContract(contract.id);
+  const today = new Date().toISOString().slice(0, 10);
+  const close = openModal({
+    title: `Ghi nhận thanh toán — ${contract.code}`,
+    bodyHtml: `
+      <div class="card card-pad mb-16" style="background:var(--surface-alt)">
+        <div class="oc-line"><span>Dư nợ hiện tại</span><b>${formatVND(contract.balance)}</b></div>
+        <div class="oc-line"><span>Đã trả lãi đến ngày</span><b>${formatDate(contract.interestPaidUntil || contract.disbursedDate)}</b></div>
+        <div class="oc-line"><span>Lãi đến nay</span><b style="color:var(--warning)">${formatVND(S.accruedInterest(contract))}</b></div>
+      </div>
+      <form id="pf">
+        <div class="field"><label>Ngày thu</label><input name="date" type="date" required value="${today}"/></div>
+        <div class="field-row">
+          <div class="field"><label>Tiền lãi thu được</label><input name="interestAmount" type="number" min="0" step="1000" value="0"/></div>
+          <div class="field"><label>Tiền gốc thu được</label><input name="principalAmount" type="number" min="0" max="${contract.balance}" step="10000" value="0"/></div>
+        </div>
+        <div class="field-hint mb-8">Nhập tiền gốc sẽ tự trừ vào dư nợ; ngày thu sẽ cập nhật thành "Đã trả lãi đến ngày" mới.</div>
+        <div class="field"><label>Ghi chú</label><input name="note" placeholder="VD: Thu tiền mặt tại quầy..."/></div>
+      </form>
+      ${history.length ? `
+        <div class="section-head"><h2 style="font-size:13px">Lịch sử thanh toán</h2></div>
+        <div style="max-height:180px;overflow-y:auto">
+          ${history.map((p) => `
+            <div class="oc-line">
+              <span>${formatDate(p.date)}${p.note ? ' · ' + p.note : ''}</span>
+              <b>${p.interestAmount ? 'Lãi ' + formatVND(p.interestAmount) : ''}${p.interestAmount && p.principalAmount ? ' + ' : ''}${p.principalAmount ? 'Gốc ' + formatVND(p.principalAmount) : ''}</b>
+            </div>`).join('')}
+        </div>
+      ` : ''}
+    `,
+    footHtml: `<button class="btn btn-primary btn-block" id="save-payment">${icon('wallet', 'icon-sm')} Ghi nhận</button>`,
+    onMount(sheet, closeFn) {
+      sheet.querySelector('#save-payment').addEventListener('click', () => {
+        const form = sheet.querySelector('#pf');
+        if (!form.reportValidity()) return;
+        const fd = new FormData(form);
+        try {
+          S.recordPayment({
+            contractId: contract.id, date: fd.get('date'),
+            interestAmount: fd.get('interestAmount'), principalAmount: fd.get('principalAmount'), note: fd.get('note'),
+          });
+          toast('Đã ghi nhận thanh toán', 'success');
+          closeFn();
+          window.__qtdRedrawCustomers?.();
+          openCustomerDetail(customerId);
+        } catch (err) {
+          toast(err.message || 'Có lỗi xảy ra', 'error');
+        }
+      });
+    },
+  });
+  return close;
 }
 
 function openImportModal() {

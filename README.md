@@ -6,8 +6,8 @@
 
 Một cổng thông tin cho quỹ tín dụng, gồm:
 
-- **Phía khách hàng**: đăng nhập bằng số CCCD + mật khẩu (admin cấp sẵn, bắt buộc đổi mật khẩu lần đầu) → xem hợp đồng vay của mình (dư nợ, ngày vay, ngày đến hạn, hỗ trợ nhiều hợp đồng/người) → gửi yêu cầu tư vấn / mở khoản vay mới.
-- **Phía quản trị** (`/#/admin`, đăng nhập bằng tài khoản admin riêng): quản lý khách hàng & hợp đồng (thêm thủ công hoặc **dán dữ liệu copy từ Excel** để nhập nhanh nhiều dòng), cấp lại mật khẩu, xem/xử lý yêu cầu tư vấn, chỉnh banner + thông tin quỹ tín dụng ngay trong app.
+- **Phía khách hàng**: đăng nhập bằng số CCCD + mật khẩu (admin cấp sẵn, bắt buộc đổi mật khẩu lần đầu) → xem hợp đồng vay của mình (dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi phát sinh đến hiện tại, lịch sử thanh toán, hỗ trợ nhiều hợp đồng/người) → gửi yêu cầu tư vấn / mở khoản vay mới.
+- **Phía quản trị** (`/#/admin`, đăng nhập bằng tài khoản admin riêng): quản lý khách hàng & hợp đồng (thêm thủ công, **"Ghi nhận thanh toán"** để cập nhật nhanh khi khách trả lãi/gốc mà không cần sửa tay dư nợ, hoặc **dán dữ liệu copy từ Excel** để nhập nhiều dòng cùng lúc), cấp lại mật khẩu, xem/xử lý yêu cầu tư vấn, chỉnh banner + thông tin quỹ tín dụng ngay trong app.
 
 ## Tài khoản dùng thử
 

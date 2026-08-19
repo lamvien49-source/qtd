@@ -44,6 +44,26 @@ export function render(contentEl, filterEl, params) {
       </div>` : ''}
     </div>
 
+    ${(() => {
+      const history = S.listPaymentsByContract(contract.id);
+      if (!history.length) return '';
+      return `
+      <div class="card card-pad mb-16">
+        <div class="section-head"><h2>Lịch sử thanh toán</h2></div>
+        ${history.map((p) => `
+          <div class="list-row">
+            <div class="row-main">
+              <div class="row-title">${formatDate(p.date)}</div>
+              ${p.note ? `<div class="row-sub">${p.note}</div>` : ''}
+            </div>
+            <div class="row-end">
+              ${p.interestAmount ? `<div class="amount-sub">Lãi: ${formatVND(p.interestAmount)}</div>` : ''}
+              ${p.principalAmount ? `<div class="amount-sub">Gốc: ${formatVND(p.principalAmount)}</div>` : ''}
+            </div>
+          </div>`).join('')}
+      </div>`;
+    })()}
+
     <a href="#/yeu-cau-tu-van?hop_dong=${contract.code}" class="btn btn-outline btn-block">
       ${icon('phone', 'icon-sm')} Liên hệ tư vấn về hợp đồng này
     </a>

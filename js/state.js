@@ -42,7 +42,11 @@ function persist() {
 export async function init() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
-    try { state = JSON.parse(raw); return; }
+    try {
+      state = JSON.parse(raw);
+      if (!state.payments) state.payments = []; // tương thích dữ liệu cũ trước khi có tính năng ghi nhận thanh toán
+      return;
+    }
     catch (e) { console.warn('Dữ liệu lỗi, tạo lại dữ liệu mẫu.', e); }
   }
   await seedDemoData();
@@ -194,13 +198,50 @@ export function upsertContract({ customerId, code, principal, disbursedDate, due
 }
 
 export function deleteCustomer(id) {
+  const removedContractIds = new Set(state.contracts.filter((c) => c.customerId === id).map((c) => c.id));
   state.customers = state.customers.filter((c) => c.id !== id);
   state.contracts = state.contracts.filter((c) => c.customerId !== id);
+  state.payments = state.payments.filter((p) => !removedContractIds.has(p.contractId));
   notify();
 }
 export function deleteContract(id) {
   state.contracts = state.contracts.filter((c) => c.id !== id);
+  state.payments = state.payments.filter((p) => p.contractId !== id);
   notify();
+}
+
+// ------------------------------------------------------------
+// Ghi nhận thanh toán (thu lãi / thu gốc) — cách cập nhật nhanh nhất,
+// không cần sửa tay dư nợ hay ngày trả lãi.
+// ------------------------------------------------------------
+export function listPaymentsByContract(contractId) {
+  return state.payments.filter((p) => p.contractId === contractId).sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+export function recordPayment({ contractId, date, interestAmount, principalAmount, note }) {
+  const ct = getContract(contractId);
+  if (!ct) throw new Error('Không tìm thấy hợp đồng');
+  const principal = Math.max(0, Number(principalAmount) || 0);
+  const interest = Math.max(0, Number(interestAmount) || 0);
+  const payDate = date || new Date().toISOString().slice(0, 10);
+
+  const payment = {
+    id: genId('tt'), contractId, date: payDate,
+    interestAmount: interest, principalAmount: principal, note: note || '',
+    createdAt: new Date().toISOString(),
+  };
+  state.payments.push(payment);
+
+  ct.balance = Math.max(0, ct.balance - principal);
+  // Chỉ đẩy "đã trả lãi đến ngày" tới nếu ngày thu mới hơn ngày đã ghi trước đó
+  if (!ct.interestPaidUntil || new Date(payDate) > new Date(ct.interestPaidUntil)) {
+    ct.interestPaidUntil = payDate;
+  }
+  if (ct.balance === 0) ct.status = 'da_tat_toan';
+  else if (ct.status === 'da_tat_toan') ct.status = 'dang_vay';
+
+  notify();
+  return payment;
 }
 
 // ------------------------------------------------------------
@@ -380,5 +421,5 @@ async function seedDemoData() {
     },
   ];
 
-  state = { org, admins, customers, contracts, requests, session: null };
+  state = { org, admins, customers, contracts, requests, payments: [], session: null };
 }
