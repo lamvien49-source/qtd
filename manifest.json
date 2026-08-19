@@ -1,6 +1,6 @@
 {
-  "name": "Quỹ Tín Dụng Demo - Cổng khách hàng (DEMO)",
-  "short_name": "QTD Demo",
+  "name": "Quỹ Tín Dụng Nhân Dân Bình Nguyên - Cổng khách hàng (DEMO)",
+  "short_name": "QTD Bình Nguyên",
   "description": "BẢN DEMO — cổng tra cứu khoản vay & yêu cầu tư vấn. Dữ liệu minh họa, chưa kết nối hệ thống thật.",
   "start_url": ".",
   "display": "standalone",
@@ -9,7 +9,7 @@
   "lang": "vi",
   "icons": [
     {
-      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f6f61'/%3E%3Ctext x='50' y='66' font-size='50' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EQT%3C/text%3E%3C/svg%3E",
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230f6f61'/%3E%3Ctext x='50' y='66' font-size='50' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EBN%3C/text%3E%3C/svg%3E",
       "sizes": "any",
       "type": "image/svg+xml",
       "purpose": "any maskable"

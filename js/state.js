@@ -293,8 +293,8 @@ export function logout() { state.session = null; notify(); }
 async function seedDemoData() {
   const rng = mulberry32(7717);
   const org = {
-    name: 'Quỹ Tín Dụng Nhân Dân Demo',
-    shortName: 'QTD Demo',
+    name: 'Quỹ Tín Dụng Nhân Dân Bình Nguyên',
+    shortName: 'QTD Bình Nguyên',
     hotline: '1900 000 000',
     address: '01 Đường Mẫu, Phường Trung Tâm, Tỉnh Demo',
     bannerEnabled: true,

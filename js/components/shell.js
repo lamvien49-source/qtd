@@ -28,7 +28,7 @@ export function buildShell(root, role) {
         <div class="sidebar-brand">
           <div class="logo-mark">${icon('landmark', 'icon-sm')}</div>
           <div>
-            <strong id="brand-name">Quỹ Tín Dụng</strong>
+            <strong id="brand-name">QTD Bình Nguyên</strong>
             <span>${role === 'admin' ? 'Trang quản trị' : 'Cổng khách hàng'}</span>
           </div>
         </div>
