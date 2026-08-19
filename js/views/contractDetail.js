@@ -113,7 +113,7 @@ export async function shareQrImage(url, text) {
 }
 
 /** Ô nhập số tiền hiển thị có dấu chấm ngăn cách hàng nghìn (VD: 1.500.000) khi gõ. */
-function bindMoneyInput(inputEl, initial, onChange) {
+export function bindMoneyInput(inputEl, initial, onChange) {
   inputEl.value = initial ? formatNumber(initial) : '';
   inputEl.addEventListener('input', () => {
     const raw = Number(inputEl.value.replace(/\D/g, '')) || 0;
