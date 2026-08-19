@@ -7,9 +7,13 @@ export function renderHeader(headerEl) {
 }
 
 export function render(contentEl) {
-  const customers = S.listCustomers();
-  const contracts = S.getState().contracts;
-  const requests = S.listRequests({});
+  const session = S.getSession();
+  const admin = S.getAdmin(session.id);
+  const isStaff = admin.role === 'staff';
+  const customers = S.listCustomers({ adminId: isStaff ? admin.id : undefined });
+  const customerIds = new Set(customers.map((c) => c.id));
+  const contracts = S.getState().contracts.filter((c) => !isStaff || customerIds.has(c.customerId));
+  const requests = S.listRequests({}).filter((r) => !isStaff || customerIds.has(r.customerId));
   const totalOutstanding = contracts.filter((c) => c.status !== 'da_tat_toan').reduce((s, c) => s + c.balance, 0);
   const overdue = contracts.filter((c) => c.status === 'qua_han');
   const newRequests = requests.filter((r) => r.status === 'moi');

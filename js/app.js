@@ -12,6 +12,7 @@ import * as AdminOverview from './views/admin/overview.js';
 import * as AdminCustomers from './views/admin/customers.js';
 import * as AdminRequests from './views/admin/requests.js';
 import * as AdminSettings from './views/admin/settings.js';
+import * as AdminStaff from './views/admin/staff.js';
 
 const customerRoutes = [
   { re: /^#\/$/, view: Dashboard },
@@ -23,11 +24,12 @@ const adminRoutes = [
   { re: /^#\/admin$/, view: AdminOverview },
   { re: /^#\/admin\/khach-hang$/, view: AdminCustomers },
   { re: /^#\/admin\/yeu-cau$/, view: AdminRequests },
-  { re: /^#\/admin\/cai-dat$/, view: AdminSettings },
+  { re: /^#\/admin\/cai-dat$/, view: AdminSettings, superOnly: true },
+  { re: /^#\/admin\/nhan-vien$/, view: AdminStaff, superOnly: true },
 ];
 
 let root;
-let shellRole = null;
+let shellKey = null;
 
 function splitHash() {
   const raw = location.hash || '#/';
@@ -41,7 +43,7 @@ function matchRoute(path, routes) {
     if (m) {
       const params = {};
       (r.params || []).forEach((name, i) => { params[name] = decodeURIComponent(m[i + 1]); });
-      return { view: r.view, params };
+      return { view: r.view, params, superOnly: !!r.superOnly };
     }
   }
   return null;
@@ -53,7 +55,7 @@ function renderApp() {
   const session = S.getSession();
 
   if (!session) {
-    shellRole = null;
+    shellKey = null;
     renderLogin(root, () => renderApp());
     return;
   }
@@ -62,25 +64,27 @@ function renderApp() {
     const customer = S.getCustomer(session.id);
     if (!customer) { S.logout(); renderApp(); return; }
     if (customer.mustChangePassword) {
-      shellRole = null;
+      shellKey = null;
       renderChangePassword(root, customer.id, () => renderApp(), { forced: true });
       return;
     }
   }
 
+  const isSuper = session.role === 'admin' ? S.isSuperAdmin(session.id) : false;
   const { path, query } = splitHash();
   const routes = session.role === 'admin' ? adminRoutes : customerRoutes;
   const defaultPath = session.role === 'admin' ? '#/admin' : '#/';
   let match = matchRoute(path, routes);
-  if (!match) {
-    // Trang không hợp lệ với vai trò hiện tại -> về trang mặc định
+  if (!match || (match.superOnly && !isSuper)) {
+    // Trang không hợp lệ / không đủ quyền với vai trò hiện tại -> về trang mặc định
     if (location.hash !== defaultPath) { location.hash = defaultPath; return; }
     match = matchRoute(defaultPath, routes);
   }
 
-  if (shellRole !== session.role) {
-    buildShell(root, session.role);
-    shellRole = session.role;
+  const newShellKey = session.role + ':' + isSuper;
+  if (shellKey !== newShellKey) {
+    buildShell(root, session.role, isSuper);
+    shellKey = newShellKey;
   }
   document.getElementById('brand-name').textContent = S.getOrg().shortName;
 

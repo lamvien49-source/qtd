@@ -21,7 +21,14 @@ export function render(contentEl, filterEl) {
     chip.addEventListener('click', () => { activeStatus = chip.dataset.s; render(contentEl, filterEl); });
   });
 
-  const list = S.listRequests({ status: activeStatus });
+  const session = S.getSession();
+  const admin = S.getAdmin(session.id);
+  const isStaff = admin.role === 'staff';
+  let list = S.listRequests({ status: activeStatus });
+  if (isStaff) {
+    const allowedIds = new Set(S.listCustomers({ adminId: admin.id }).map((c) => c.id));
+    list = list.filter((r) => allowedIds.has(r.customerId));
+  }
   contentEl.innerHTML = list.length ? list.map((r) => {
     const cust = S.getCustomer(r.customerId);
     return `

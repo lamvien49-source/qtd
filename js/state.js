@@ -6,7 +6,7 @@
 // ============================================================
 import { genId, mulberry32, randInt, addDays, daysBetween } from './utils.js';
 
-export const STORAGE_KEY = 'qtd_demo_v1';
+export const STORAGE_KEY = 'qtd_demo_v2';
 
 export const REQUEST_TYPE = [
   { id: 'vay_moi', label: 'Yêu cầu mở khoản vay mới' },
@@ -90,7 +90,19 @@ export function updateOrg(patch) { Object.assign(state.org, patch); notify(); }
 // ------------------------------------------------------------
 // Khách hàng
 // ------------------------------------------------------------
-export function listCustomers() { return state.customers; }
+export function listCustomers(filters = {}) {
+  let list = state.customers;
+  if (filters.thon) list = list.filter((c) => c.thon === filters.thon);
+  if (filters.xom) list = list.filter((c) => c.xom === filters.xom);
+  if (filters.adminId) {
+    const admin = getAdmin(filters.adminId);
+    if (admin && admin.role === 'staff') {
+      const allowed = new Set(admin.allowedThon || []);
+      list = list.filter((c) => allowed.has(c.thon));
+    }
+  }
+  return list;
+}
 export function getCustomer(id) { return state.customers.find((c) => c.id === id); }
 export function findCustomerByCccd(cccd) { return state.customers.find((c) => c.cccd === String(cccd).trim()); }
 
@@ -157,25 +169,37 @@ export async function adminResetCustomerPassword(customerId) {
   return temp;
 }
 
-export async function upsertCustomer({ cccd, name, phone, address }) {
+export async function upsertCustomer({ cccd, name, phone, xom, thon, tinh }) {
   let c = findCustomerByCccd(cccd);
   if (c) {
     c.name = name || c.name;
     c.phone = phone || c.phone;
-    c.address = address || c.address;
+    if (xom) c.xom = xom;
+    if (thon) c.thon = thon;
+    if (tinh) c.tinh = tinh;
     notify();
     return { customer: c, isNew: false, tempPassword: null };
   }
   const temp = genTempPassword();
   const cred = await makeCredential(temp);
   c = {
-    id: genId('cust'), cccd: String(cccd).trim(), name, phone: phone || '', address: address || '',
+    id: genId('cust'), cccd: String(cccd).trim(), name, phone: phone || '',
+    xom: xom || '', thon: thon || '', tinh: tinh || '',
     salt: cred.salt, hash: cred.hash, mustChangePassword: true, tempPassword: temp,
     failedAttempts: 0, lockedUntil: null, createdAt: new Date().toISOString(),
   };
   state.customers.push(c);
   notify();
   return { customer: c, isNew: true, tempPassword: temp };
+}
+
+/** Danh sách các Thôn / Xóm đang có trong dữ liệu khách hàng (dùng để lọc & gán quyền). */
+export function distinctThon() {
+  return [...new Set(state.customers.map((c) => c.thon).filter(Boolean))].sort();
+}
+export function distinctXom(thon) {
+  const list = thon ? state.customers.filter((c) => c.thon === thon) : state.customers;
+  return [...new Set(list.map((c) => c.xom).filter(Boolean))].sort();
 }
 
 export function upsertContract({ customerId, code, principal, disbursedDate, dueDate, interestRate, balance, status, termMonths, interestPaidUntil }) {
@@ -204,9 +228,9 @@ export function deleteContract(id) {
 }
 
 // ------------------------------------------------------------
-// Nhập nhanh từ dữ liệu dán (copy từ Excel) — không cần thư viện đọc file .xlsx
+// Nhập dữ liệu từ bảng (đọc trực tiếp file .xlsx hoặc dán dữ liệu copy từ Excel)
 // Định dạng mỗi dòng (phân cách bằng Tab hoặc dấu phẩy):
-// CCCD | Họ tên | SĐT | Số hợp đồng | Số tiền vay | Ngày vay | Ngày đến hạn | Lãi suất(%) | Dư nợ
+// CCCD | Họ tên | SĐT | Xóm | Thôn | Tỉnh | Mã hợp đồng | Số tiền vay | Ngày vay | Ngày đến hạn | Lãi suất(%) | Dư nợ | Đã trả lãi đến ngày
 // ------------------------------------------------------------
 export function parseVNNumber(str) {
   const cleaned = String(str || '').replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.');
@@ -220,6 +244,11 @@ export function parseVNDate(str) {
     let [, d, mo, y] = m;
     if (y.length === 2) y = '20' + y;
     return `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}`;
+  }
+  // Số serial ngày kiểu Excel (ô định dạng Ngày tháng khi đọc từ file .xlsx sẽ ra số thuần)
+  if (/^\d{4,6}$/.test(s)) {
+    const dt = new Date(Date.UTC(1899, 11, 30) + Number(s) * 86400000);
+    if (!Number.isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
   }
   const dt = new Date(s);
   return Number.isNaN(dt.getTime()) ? '' : dt.toISOString().slice(0, 10);
@@ -235,10 +264,10 @@ export async function importFromPastedTable(text) {
     const first = cells[0].toLowerCase();
     if (HEADER_HINTS.some((h) => first.includes(h))) continue; // bỏ qua dòng tiêu đề
 
-    const [cccd, name, phone, code, principal, disbursedDate, dueDate, interestRate, balance, interestPaidUntil] = cells.map((c) => c.trim());
+    const [cccd, name, phone, xom, thon, tinh, code, principal, disbursedDate, dueDate, interestRate, balance, interestPaidUntil] = cells.map((c) => c.trim());
     if (!cccd || !/^\d{9,12}$/.test(cccd.replace(/\s/g, ''))) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
 
-    const { customer, isNew, tempPassword } = await upsertCustomer({ cccd: cccd.replace(/\s/g, ''), name, phone });
+    const { customer, isNew, tempPassword } = await upsertCustomer({ cccd: cccd.replace(/\s/g, ''), name, phone, xom, thon, tinh });
     if (isNew) result.createdCustomers.push({ cccd: customer.cccd, name: customer.name, tempPassword });
     else result.updatedCustomers++;
 
@@ -268,6 +297,47 @@ export async function loginAdmin(username, password) {
   return { ok: true, adminId: a.id };
 }
 export function getAdmin(id) { return state.admins.find((a) => a.id === id); }
+export function listAdmins() { return state.admins; }
+export function isSuperAdmin(id) { return getAdmin(id)?.role === 'super'; }
+
+/** Quản trị viên (role 'super') tạo tài khoản nhân viên (role 'staff'), giới hạn xem theo danh sách Thôn. */
+export async function addStaffAdmin({ username, name, allowedThon }) {
+  const uname = String(username || '').trim();
+  if (!uname) throw new Error('Cần nhập tên đăng nhập');
+  if (state.admins.some((a) => a.username === uname)) throw new Error('Tên đăng nhập đã tồn tại');
+  const temp = genTempPassword();
+  const cred = await makeCredential(temp);
+  const staff = {
+    id: genId('staff'), username: uname, name: name || uname, role: 'staff',
+    allowedThon: Array.isArray(allowedThon) ? allowedThon : [],
+    ...cred, createdAt: new Date().toISOString(),
+  };
+  state.admins.push(staff);
+  notify();
+  return { staff, tempPassword: temp };
+}
+export function updateStaffPermissions(id, allowedThon) {
+  const a = getAdmin(id);
+  if (!a || a.role !== 'staff') return;
+  a.allowedThon = Array.isArray(allowedThon) ? allowedThon : [];
+  notify();
+}
+export async function resetStaffPassword(id) {
+  const a = getAdmin(id);
+  if (!a) throw new Error('Không tìm thấy tài khoản');
+  const temp = genTempPassword();
+  const cred = await makeCredential(temp);
+  a.salt = cred.salt;
+  a.hash = cred.hash;
+  notify();
+  return temp;
+}
+export function deleteStaffAdmin(id) {
+  const a = getAdmin(id);
+  if (!a || a.role !== 'staff') return; // không cho xóa tài khoản quản trị chính
+  state.admins = state.admins.filter((x) => x.id !== id);
+  notify();
+}
 
 // ------------------------------------------------------------
 // Yêu cầu tư vấn / mở khoản vay
@@ -314,23 +384,32 @@ async function seedDemoData() {
     bannerEnabled: true,
     bannerTitle: 'Ưu đãi lãi suất vay tiêu dùng',
     bannerText: 'Liên hệ quầy giao dịch hoặc gửi yêu cầu tư vấn ngay trên ứng dụng để được hỗ trợ.',
+    // Thông tin nhận thanh toán — HIỂN THỊ CHO KHÁCH HÀNG THẬT, cần admin xác minh lại tại Cài đặt.
+    bankBin: '970446', // Ngân hàng Hợp tác xã Việt Nam (Co-op Bank) — kiểm tra lại tại vietqr.io trước khi dùng thật
+    bankName: 'Ngân hàng Hợp tác xã Việt Nam (Co-op Bank)',
+    bankAccountNo: '5200000000825012',
+    bankAccountName: 'QUY TIN DUNG NHAN DAN BINH NGUYEN',
   };
 
   const adminCred = await makeCredential('Admin@123');
-  const admins = [{ id: 'admin_1', username: 'admin', name: 'Quản trị viên', ...adminCred }];
+  const staffCred = await makeCredential('Staff@123');
+  const admins = [
+    { id: 'admin_1', username: 'admin', name: 'Quản trị viên', role: 'super', allowedThon: [], ...adminCred },
+    { id: 'staff_1', username: 'nhanvien1', name: 'Nhân viên địa bàn Thôn 1', role: 'staff', allowedThon: ['Thôn 1'], ...staffCred, createdAt: new Date().toISOString() },
+  ];
 
   const demoDefs = [
-    ['079300012345', 'Trần Văn Mẫu', '0901 000 001', 'Phường A, Tỉnh Demo'],
-    ['079300012346', 'Nguyễn Thị Mẫu', '0901 000 002', 'Phường B, Tỉnh Demo'],
-    ['079300012347', 'Lê Văn Ví Dụ', '0901 000 003', 'Phường C, Tỉnh Demo'],
-    ['079300012348', 'Phạm Thị Ví Dụ', '0901 000 004', 'Phường D, Tỉnh Demo'],
+    ['079300012345', 'Trần Văn Mẫu', '0901 000 001', 'Xóm A', 'Thôn 1', 'Tỉnh Demo'],
+    ['079300012346', 'Nguyễn Thị Mẫu', '0901 000 002', 'Xóm B', 'Thôn 1', 'Tỉnh Demo'],
+    ['079300012347', 'Lê Văn Ví Dụ', '0901 000 003', 'Xóm A', 'Thôn 2', 'Tỉnh Demo'],
+    ['079300012348', 'Phạm Thị Ví Dụ', '0901 000 004', 'Xóm B', 'Thôn 2', 'Tỉnh Demo'],
   ];
   const customers = [];
-  for (const [cccd, name, phone, address] of demoDefs) {
+  for (const [cccd, name, phone, xom, thon, tinh] of demoDefs) {
     const temp = 'Demo@123';
     const cred = await makeCredential(temp);
     customers.push({
-      id: genId('cust'), cccd, name, phone, address,
+      id: genId('cust'), cccd, name, phone, xom, thon, tinh,
       ...cred, mustChangePassword: true, tempPassword: temp,
       failedAttempts: 0, lockedUntil: null, createdAt: new Date().toISOString(),
     });

@@ -115,6 +115,18 @@ export function debounce(fn, ms = 250) {
   };
 }
 
+/** Bỏ dấu tiếng Việt, in hoa — dùng cho nội dung chuyển khoản ngân hàng (thường yêu cầu không dấu). */
+export function stripDiacritics(str) {
+  return String(str || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd').replace(/Đ/g, 'D')
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /** Che bớt số CCCD khi hiển thị, vd: 023xxxxxxxxx -> 023•••••6789 */
 export function maskCccd(cccd) {
   const s = String(cccd || '');

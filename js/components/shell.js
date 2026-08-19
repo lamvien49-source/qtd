@@ -11,6 +11,9 @@ export const ADMIN_NAV = [
   { path: '#/admin', label: 'Tổng quan', icon: 'chart' },
   { path: '#/admin/khach-hang', label: 'Khách hàng & Hợp đồng', icon: 'users' },
   { path: '#/admin/yeu-cau', label: 'Yêu cầu tư vấn', icon: 'clipboard' },
+];
+export const ADMIN_NAV_SUPER_ONLY = [
+  { path: '#/admin/nhan-vien', label: 'Quản lý nhân viên', icon: 'idCard' },
   { path: '#/admin/cai-dat', label: 'Cài đặt', icon: 'settings' },
 ];
 
@@ -19,8 +22,8 @@ function matchPath(navPath, current) {
   return current === navPath || current.startsWith(navPath + '/');
 }
 
-export function buildShell(root, role) {
-  const nav = role === 'admin' ? ADMIN_NAV : CUSTOMER_NAV;
+export function buildShell(root, role, isSuper) {
+  const nav = role === 'admin' ? [...ADMIN_NAV, ...(isSuper ? ADMIN_NAV_SUPER_ONLY : [])] : CUSTOMER_NAV;
   root.innerHTML = `
     <div class="demo-ribbon">BẢN DEMO — dữ liệu giả, chưa kết nối hệ thống thật, không dùng để giao dịch thật</div>
     <div class="app-shell">

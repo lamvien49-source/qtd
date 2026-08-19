@@ -1,36 +1,98 @@
 import * as S from '../../state.js';
 import { icon } from '../../icons.js';
 import { pageHeader } from '../../components/shell.js';
-import { emptyState, statusBadge } from '../../components/ui.js';
+import { emptyState, statusBadge, openPicker, pillSelectHtml } from '../../components/ui.js';
 import { openModal, confirmDialog } from '../../components/modal.js';
 import { toast } from '../../components/toast.js';
-import { formatVND, formatNumber, formatDate, maskCccd, colorFor, initials, debounce } from '../../utils.js';
+import { formatVND, formatDate, maskCccd, colorFor, initials, debounce } from '../../utils.js';
+import { readXlsxFirstSheet, rowsToTsv } from '../../lib/xlsxLite.js';
 
 export function renderHeader(headerEl) {
   headerEl.innerHTML = pageHeader({ title: 'Khách hàng & Hợp đồng' });
 }
 
 let query = '';
+let filterThon = 'all';
+let filterXom = 'all';
+let onlyOverdue = false;
+
+function currentAdmin() {
+  const session = S.getSession();
+  return S.getAdmin(session.id);
+}
 
 export function render(contentEl, filterEl) {
+  const admin = currentAdmin();
+  const isStaff = admin.role === 'staff';
+  filterThon = 'all'; filterXom = 'all'; // reset bộ lọc mỗi lần vào trang
+
   filterEl.innerHTML = `
     <div style="padding:10px 14px 0">
       <div class="search-box mb-8">${icon('search', 'icon-sm')}<input id="search-input" placeholder="Tìm theo tên, số CCCD, SĐT..." value="${query}"/></div>
-      <div class="flex gap-8 mb-8">
-        <button class="btn btn-outline btn-sm" id="btn-import">${icon('paperclip', 'icon-sm')} Nhập nhanh (dán bảng)</button>
-        <button class="btn btn-primary btn-sm" id="btn-add">${icon('plus', 'icon-sm')} Thêm khách hàng</button>
+      <div class="filter-row" style="padding:0 0 8px">
+        ${pillSelectHtml('pill-thon', 'Thôn: Tất cả')}
+        ${pillSelectHtml('pill-xom', 'Xóm: Tất cả')}
       </div>
+      <div class="chip-row mb-8">
+        <button class="chip ${!onlyOverdue ? 'active' : ''}" data-overdue="0">Tất cả</button>
+        <button class="chip ${onlyOverdue ? 'active' : ''}" data-overdue="1">${icon('alert', 'icon-sm')} Có nợ quá hạn</button>
+      </div>
+      ${!isStaff ? `
+      <div class="flex gap-8 mb-8">
+        <button class="btn btn-outline btn-sm" id="btn-import">${icon('paperclip', 'icon-sm')} Nhập từ Excel</button>
+        <button class="btn btn-primary btn-sm" id="btn-add">${icon('plus', 'icon-sm')} Thêm khách hàng</button>
+      </div>` : `<p class="field-hint mb-8">Tài khoản nhân viên — chỉ xem, không chỉnh sửa được dữ liệu.</p>`}
     </div>
   `;
   filterEl.querySelector('#search-input').addEventListener('input', debounce((e) => { query = e.target.value; draw(); }, 200));
-  filterEl.querySelector('#btn-import').addEventListener('click', openImportModal);
-  filterEl.querySelector('#btn-add').addEventListener('click', () => openCustomerForm());
+  if (!isStaff) {
+    filterEl.querySelector('#btn-import').addEventListener('click', openImportModal);
+    filterEl.querySelector('#btn-add').addEventListener('click', () => openCustomerForm());
+  }
+  filterEl.querySelectorAll('[data-overdue]').forEach((chip) => {
+    chip.addEventListener('click', () => { onlyOverdue = chip.dataset.overdue === '1'; render(contentEl, filterEl); });
+  });
+
+  function bindPickers() {
+    filterEl.querySelector('#pill-thon').addEventListener('click', () => {
+      const allowedThon = isStaff ? (admin.allowedThon || []) : S.distinctThon();
+      openPicker({
+        title: 'Chọn Thôn', selected: filterThon,
+        options: [{ value: 'all', label: 'Tất cả' }, ...allowedThon.map((t) => ({ value: t, label: t }))],
+        onSelect: (val) => {
+          filterThon = val; filterXom = 'all';
+          filterEl.querySelector('#pill-thon').firstChild.textContent = val === 'all' ? 'Thôn: Tất cả ' : `Thôn: ${val} `;
+          draw();
+        },
+      });
+    });
+    filterEl.querySelector('#pill-xom').addEventListener('click', () => {
+      const xomList = S.distinctXom(filterThon === 'all' ? undefined : filterThon);
+      openPicker({
+        title: 'Chọn Xóm', selected: filterXom,
+        options: [{ value: 'all', label: 'Tất cả' }, ...xomList.map((x) => ({ value: x, label: x }))],
+        onSelect: (val) => {
+          filterXom = val;
+          filterEl.querySelector('#pill-xom').firstChild.textContent = val === 'all' ? 'Xóm: Tất cả ' : `Xóm: ${val} `;
+          draw();
+        },
+      });
+    });
+  }
+  bindPickers();
 
   function draw() {
-    let list = S.listCustomers();
+    let list = S.listCustomers({
+      adminId: isStaff ? admin.id : undefined,
+      thon: filterThon === 'all' ? undefined : filterThon,
+      xom: filterXom === 'all' ? undefined : filterXom,
+    });
     if (query.trim()) {
       const q = query.trim().toLowerCase();
       list = list.filter((c) => c.name.toLowerCase().includes(q) || c.cccd.includes(q) || (c.phone || '').includes(q));
+    }
+    if (onlyOverdue) {
+      list = list.filter((c) => S.listContractsByCustomer(c.id).some((ct) => ct.status === 'qua_han'));
     }
     contentEl.innerHTML = `
       <div class="card card-pad">
@@ -38,23 +100,25 @@ export function render(contentEl, filterEl) {
         ${list.length ? list.map((c) => {
           const contracts = S.listContractsByCustomer(c.id);
           const total = S.customerOutstandingTotal(c.id);
+          const hasOverdue = contracts.some((ct) => ct.status === 'qua_han');
           return `
           <div class="list-row" data-id="${c.id}" style="cursor:pointer">
             <div class="row-thumb" style="background:${colorFor(c.id)}">${initials(c.name)}</div>
             <div class="row-main">
-              <div class="row-title">${c.name}</div>
+              <div class="row-title">${c.name}${hasOverdue ? ` <span class="badge badge-red">Quá hạn</span>` : ''}</div>
               <div class="row-sub">${maskCccd(c.cccd)} · ${c.phone || 'Chưa có SĐT'} · ${contracts.length} hợp đồng</div>
+              <div class="row-sub">${[c.xom, c.thon, c.tinh].filter(Boolean).join(', ') || 'Chưa có địa bàn'}</div>
             </div>
             <div class="row-end">
               <div class="amount">${formatVND(total)}</div>
-              ${c.mustChangePassword ? `<div class="amount-sub text-warning" style="color:var(--warning)">Chưa đổi MK</div>` : ''}
+              ${c.mustChangePassword ? `<div class="amount-sub" style="color:var(--warning)">Chưa đổi MK</div>` : ''}
             </div>
           </div>`;
-        }).join('') : emptyState({ iconName: 'users', title: 'Chưa có khách hàng', message: 'Dùng "Nhập nhanh" hoặc "Thêm khách hàng" để bắt đầu.' })}
+        }).join('') : emptyState({ iconName: 'users', title: 'Không có khách hàng phù hợp', message: isStaff ? 'Chưa có khách hàng nào ở địa bàn bạn được xem.' : 'Dùng "Nhập từ Excel" hoặc "Thêm khách hàng" để bắt đầu.' })}
       </div>
     `;
     contentEl.querySelectorAll('[data-id]').forEach((row) => {
-      row.addEventListener('click', () => openCustomerDetail(row.dataset.id));
+      row.addEventListener('click', () => openCustomerDetail(row.dataset.id, { readOnly: isStaff }));
     });
   }
   draw();
@@ -69,10 +133,12 @@ function openCustomerForm(customer) {
       <form id="cf">
         <div class="field"><label>Số CCCD</label><input name="cccd" required pattern="\\d{9,12}" value="${customer ? customer.cccd : ''}" ${isEdit ? 'readonly' : ''}/></div>
         <div class="field"><label>Họ tên</label><input name="name" required value="${customer ? esc(customer.name) : ''}"/></div>
+        <div class="field"><label>Số điện thoại</label><input name="phone" value="${customer ? esc(customer.phone) : ''}"/></div>
         <div class="field-row">
-          <div class="field"><label>Số điện thoại</label><input name="phone" value="${customer ? esc(customer.phone) : ''}"/></div>
-          <div class="field"><label>Địa chỉ</label><input name="address" value="${customer ? esc(customer.address) : ''}"/></div>
+          <div class="field"><label>Xóm</label><input name="xom" value="${customer ? esc(customer.xom) : ''}" placeholder="VD: Xóm 1"/></div>
+          <div class="field"><label>Thôn</label><input name="thon" value="${customer ? esc(customer.thon) : ''}" placeholder="VD: Thôn 1"/></div>
         </div>
+        <div class="field"><label>Tỉnh</label><input name="tinh" value="${customer ? esc(customer.tinh) : ''}"/></div>
         ${!isEdit ? `<div class="field-hint">Hệ thống sẽ tự tạo mật khẩu tạm cho khách hàng, hiển thị sau khi lưu.</div>` : ''}
       </form>
     `,
@@ -82,7 +148,10 @@ function openCustomerForm(customer) {
         const form = sheet.querySelector('#cf');
         if (!form.reportValidity()) return;
         const fd = new FormData(form);
-        const res = await S.upsertCustomer({ cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), address: fd.get('address') });
+        const res = await S.upsertCustomer({
+          cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'),
+          xom: fd.get('xom'), thon: fd.get('thon'), tinh: fd.get('tinh'),
+        });
         closeFn();
         if (res.isNew) {
           toast('Đã thêm khách hàng mới', 'success');
@@ -112,7 +181,7 @@ function showCredential(customer, tempPassword) {
   });
 }
 
-function openCustomerDetail(customerId) {
+function openCustomerDetail(customerId, { readOnly = false } = {}) {
   const c = S.getCustomer(customerId);
   const contracts = S.listContractsByCustomer(customerId);
   const close = openModal({
@@ -120,16 +189,18 @@ function openCustomerDetail(customerId) {
     bodyHtml: `
       <div class="oc-line"><span>CCCD</span><b>${c.cccd}</b></div>
       <div class="oc-line"><span>SĐT</span><b>${c.phone || '—'}</b></div>
-      <div class="oc-line"><span>Địa chỉ</span><b>${c.address || '—'}</b></div>
+      <div class="oc-line"><span>Địa bàn</span><b>${[c.xom, c.thon, c.tinh].filter(Boolean).join(', ') || '—'}</b></div>
+      ${!readOnly ? `
       <div class="flex gap-8 mt-16 mb-16">
         <button class="btn btn-outline btn-sm" id="btn-reset-pw">${icon('key', 'icon-sm')} Cấp lại mật khẩu</button>
         <button class="btn btn-outline btn-sm" id="btn-add-contract">${icon('plus', 'icon-sm')} Thêm hợp đồng</button>
         <button class="btn btn-danger-outline btn-sm" id="btn-del-cust">${icon('trash', 'icon-sm')}</button>
-      </div>
+      </div>` : '<div class="mt-16"></div>'}
       <div class="section-head"><h2 style="font-size:14px">Hợp đồng (${contracts.length})</h2></div>
-      <div id="contract-list">${contracts.map((ct) => contractRow(ct)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng.</p>'}</div>
+      <div id="contract-list">${contracts.map((ct) => contractRow(ct, readOnly)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng.</p>'}</div>
     `,
     onMount(sheet, closeFn) {
+      if (readOnly) return;
       sheet.querySelector('#btn-reset-pw').addEventListener('click', async () => {
         const temp = await S.adminResetCustomerPassword(customerId);
         showCredential(c, temp);
@@ -149,11 +220,11 @@ function openCustomerDetail(customerId) {
   });
 }
 
-function contractRow(ct) {
+function contractRow(ct, readOnly) {
   const status = S.CONTRACT_STATUS_MAP[ct.status];
   const interest = S.accruedInterest(ct);
   return `
-    <div class="list-row" data-edit-contract="${ct.id}" style="cursor:pointer">
+    <div class="list-row" ${readOnly ? '' : `data-edit-contract="${ct.id}" style="cursor:pointer"`}>
       <div class="row-main">
         <div class="row-title">${ct.code}</div>
         <div class="row-sub">Vay ${formatVND(ct.principal)} · ${formatDate(ct.disbursedDate)} → ${formatDate(ct.dueDate)}</div>
@@ -224,36 +295,62 @@ function openContractForm(customerId, contract) {
   });
 }
 
+const COLUMN_ORDER_HINT = 'CCCD, Họ tên, SĐT, Xóm, Thôn, Tỉnh, Mã hợp đồng, Số tiền vay, Ngày vay, Ngày đến hạn, Lãi suất, Dư nợ, Đã trả lãi đến ngày';
+
 function openImportModal() {
   const close = openModal({
-    title: 'Nhập nhanh từ bảng (dán từ Excel)',
+    title: 'Nhập dữ liệu từ Excel',
     bodyHtml: `
       <p class="text-sm text-muted mb-8">
-        Mở file Excel, chọn vùng dữ liệu (không lấy dòng tiêu đề), <b>Copy</b>, rồi <b>dán (Ctrl+V)</b> vào ô bên dưới.
-        Thứ tự cột: <b>CCCD, Họ tên, SĐT, Mã hợp đồng, Số tiền vay, Ngày vay, Ngày đến hạn, Lãi suất, Dư nợ, Đã trả lãi đến ngày</b> (cột cuối có thể để trống).
+        Chọn file Excel (<b>.xlsx</b>) có các cột theo đúng thứ tự sau (dòng đầu là tiêu đề sẽ tự bỏ qua):<br/>
+        <b>${COLUMN_ORDER_HINT}</b>
       </p>
-      <div class="field"><textarea id="paste-area" rows="8" placeholder="Dán dữ liệu vào đây..." style="width:100%;border:1px solid var(--border-strong);border-radius:8px;padding:10px;font-size:13px;font-family:monospace"></textarea></div>
+      <div class="field">
+        <input type="file" id="file-input" accept=".xlsx"/>
+        <div class="field-hint">Chỉ đọc được file .xlsx (Excel 2007 trở lên). File .xls cũ cần lưu lại dưới dạng .xlsx trước.</div>
+      </div>
       <div id="import-result"></div>
+      <details class="mt-16">
+        <summary class="text-sm fw-700" style="cursor:pointer">Hoặc dán dữ liệu thủ công (copy từ Excel)</summary>
+        <div class="field mt-8"><textarea id="paste-area" rows="6" placeholder="Dán dữ liệu vào đây..." style="width:100%;border:1px solid var(--border-strong);border-radius:8px;padding:10px;font-size:13px;font-family:monospace"></textarea></div>
+        <button class="btn btn-outline btn-block" id="do-paste-import">${icon('paperclip', 'icon-sm')} Nhập từ dữ liệu đã dán</button>
+      </details>
     `,
-    footHtml: `<button class="btn btn-primary btn-block" id="do-import">${icon('paperclip', 'icon-sm')} Nhập dữ liệu</button>`,
     onMount(sheet, closeFn) {
-      sheet.querySelector('#do-import').addEventListener('click', async () => {
-        const text = sheet.querySelector('#paste-area').value;
-        if (!text.trim()) { toast('Chưa có dữ liệu để nhập', 'error'); return; }
-        const res = await S.importFromPastedTable(text);
-        const resultEl = sheet.querySelector('#import-result');
-        resultEl.innerHTML = `
-          <div class="card card-pad mt-16" style="background:var(--surface-alt)">
-            <div class="text-sm mb-8">✅ ${res.createdCustomers.length} khách hàng mới · ${res.updatedCustomers} khách đã cập nhật · ${res.contracts} hợp đồng</div>
-            ${res.createdCustomers.length ? `
-              <div class="fw-700 text-sm mb-6">Tài khoản mới tạo (gửi cho khách hàng):</div>
-              ${res.createdCustomers.map((c) => `<div class="oc-line"><span>${c.name} (${c.cccd})</span><b>${c.tempPassword}</b></div>`).join('')}
-            ` : ''}
-            ${res.errors.length ? `<div class="text-sm text-danger mt-8">${res.errors.slice(0, 5).join('<br/>')}</div>` : ''}
-          </div>
-        `;
-        toast('Đã nhập dữ liệu', 'success');
-        window.__qtdRedrawCustomers?.();
+      const resultEl = sheet.querySelector('#import-result');
+      const runImport = async (tsvText) => {
+        if (!tsvText.trim()) { toast('Không có dữ liệu để nhập', 'error'); return; }
+        try {
+          const res = await S.importFromPastedTable(tsvText);
+          resultEl.innerHTML = `
+            <div class="card card-pad mt-16" style="background:var(--surface-alt)">
+              <div class="text-sm mb-8">✅ ${res.createdCustomers.length} khách hàng mới · ${res.updatedCustomers} khách đã cập nhật · ${res.contracts} hợp đồng</div>
+              ${res.createdCustomers.length ? `
+                <div class="fw-700 text-sm mb-6">Tài khoản mới tạo (gửi cho khách hàng):</div>
+                ${res.createdCustomers.map((c) => `<div class="oc-line"><span>${c.name} (${c.cccd})</span><b>${c.tempPassword}</b></div>`).join('')}
+              ` : ''}
+              ${res.errors.length ? `<div class="text-sm text-danger mt-8">${res.errors.slice(0, 5).join('<br/>')}</div>` : ''}
+            </div>
+          `;
+          toast('Đã nhập dữ liệu', 'success');
+          window.__qtdRedrawCustomers?.();
+        } catch (err) {
+          toast(err.message || 'Có lỗi khi nhập dữ liệu', 'error');
+        }
+      };
+
+      sheet.querySelector('#file-input').addEventListener('change', async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        try {
+          const rows = await readXlsxFirstSheet(file);
+          await runImport(rowsToTsv(rows));
+        } catch (err) {
+          toast('Không đọc được file: ' + (err.message || ''), 'error');
+        }
+      });
+      sheet.querySelector('#do-paste-import').addEventListener('click', () => {
+        runImport(sheet.querySelector('#paste-area').value);
       });
     },
   });

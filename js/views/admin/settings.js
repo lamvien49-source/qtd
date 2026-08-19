@@ -25,6 +25,20 @@ export function render(contentEl) {
     </div>
 
     <div class="card card-pad mb-16">
+      <div class="section-head"><h2>Thông tin nhận thanh toán (QR)</h2></div>
+      <p class="text-sm text-muted mb-8">Dùng để tạo mã QR chuyển khoản cho khách hàng ở trang hợp đồng. <b class="text-danger">Kiểm tra lại chính xác trước khi dùng thật</b> — mã ngân hàng (BIN) sai sẽ tạo QR không quét được hoặc chuyển nhầm nơi nhận.</p>
+      <form id="bank-form">
+        <div class="field"><label>Tên ngân hàng</label><input name="bankName" value="${esc(org.bankName)}"/></div>
+        <div class="field"><label>Mã ngân hàng VietQR (BIN)</label><input name="bankBin" value="${esc(org.bankBin)}" placeholder="VD: 970446"/></div>
+        <div class="field-row">
+          <div class="field"><label>Số tài khoản</label><input name="bankAccountNo" value="${esc(org.bankAccountNo)}"/></div>
+          <div class="field"><label>Tên chủ tài khoản</label><input name="bankAccountName" value="${esc(org.bankAccountName)}"/></div>
+        </div>
+        <button class="btn btn-primary btn-block" type="submit">Lưu thông tin ngân hàng</button>
+      </form>
+    </div>
+
+    <div class="card card-pad mb-16">
       <div class="section-head"><h2>Banner trang chủ khách hàng</h2></div>
       <form id="banner-form">
         <div class="field">
@@ -60,6 +74,16 @@ export function render(contentEl) {
     const fd = new FormData(e.target);
     S.updateOrg({ name: fd.get('name'), shortName: fd.get('shortName'), hotline: fd.get('hotline'), address: fd.get('address') });
     toast('Đã lưu thông tin quỹ tín dụng', 'success');
+  });
+
+  contentEl.querySelector('#bank-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    S.updateOrg({
+      bankName: fd.get('bankName'), bankBin: fd.get('bankBin').trim(),
+      bankAccountNo: fd.get('bankAccountNo').trim(), bankAccountName: fd.get('bankAccountName').trim(),
+    });
+    toast('Đã lưu thông tin nhận thanh toán', 'success');
   });
 
   contentEl.querySelector('#banner-form').addEventListener('submit', (e) => {

@@ -47,7 +47,7 @@ export function renderLogin(root, onLoggedIn) {
     root.querySelector('#input-primary').placeholder = isAdmin ? 'Nhập tên đăng nhập quản trị' : 'Nhập số CCCD của bạn';
     root.querySelector('#input-primary').inputMode = isAdmin ? 'text' : 'numeric';
     root.querySelector('#demo-hint-body').innerHTML = isAdmin
-      ? `Tài khoản: <b>admin</b><br/>Mật khẩu: <b>Admin@123</b>`
+      ? `Quản trị viên (toàn quyền): <b>admin</b> / <b>Admin@123</b><br/>Nhân viên (chỉ xem, giới hạn Thôn 1): <b>nhanvien1</b> / <b>Staff@123</b>`
       : `Số CCCD: <b>079300012345</b><br/>Mật khẩu: <b>Demo@123</b><br/><span class="text-faint">(sẽ yêu cầu đổi mật khẩu ngay lần đầu đăng nhập)</span>`;
   }
   updateMode();
