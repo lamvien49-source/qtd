@@ -436,6 +436,7 @@ function openImportModal() {
         <input type="file" id="file-input" accept=".xls,.xlsx"/>
         <div class="field-hint">Đọc trực tiếp trong trình duyệt, hỗ trợ cả file .xls (Excel 97-2003) lẫn .xlsx — không cần chuyển đổi định dạng trước, không cần thư viện ngoài.</div>
       </div>
+      <button class="btn btn-primary btn-block mt-8" id="btn-upload-file" disabled>${icon('upload', 'icon-sm')} Tải lên</button>
       <div id="import-result"></div>
       <details class="mt-16">
         <summary class="text-sm fw-700" style="cursor:pointer">Hoặc dán dữ liệu thủ công (copy từ Excel)</summary>
@@ -446,8 +447,14 @@ function openImportModal() {
     `,
     onMount(sheet, closeFn) {
       const resultEl = sheet.querySelector('#import-result');
-      const runImport = async (tsvText, fullSync) => {
+      const fileInput = sheet.querySelector('#file-input');
+      const uploadBtn = sheet.querySelector('#btn-upload-file');
+
+      const runImport = async (tsvText, fullSync, btn, busyLabel) => {
         if (!tsvText.trim()) { toast('Không có dữ liệu để nhập', 'error'); return; }
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.textContent = busyLabel;
         try {
           const res = await S.importFromPastedTable(tsvText, { fullSync });
           resultEl.innerHTML = `
@@ -466,21 +473,34 @@ function openImportModal() {
           window.__qtdRedrawCustomers?.();
         } catch (err) {
           toast(err.message || 'Có lỗi khi nhập dữ liệu', 'error');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
         }
       };
 
-      sheet.querySelector('#file-input').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
+      // Chọn file xong chỉ hiện tên file + bật nút "Tải lên" — bấm nút mới
+      // thật sự đọc/xử lý file, tránh xử lý nhầm ngay khi vừa chọn nhầm file.
+      fileInput.addEventListener('change', () => {
+        uploadBtn.disabled = !fileInput.files[0];
+      });
+      uploadBtn.addEventListener('click', async () => {
+        const file = fileInput.files[0];
         if (!file) return;
+        const originalHtml = uploadBtn.innerHTML;
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Đang đọc file...';
         try {
           const rows = await readExcelFirstSheet(file);
-          await runImport(rowsToTsv(rows), true);
+          await runImport(rowsToTsv(rows), true, uploadBtn, 'Đang xử lý...');
         } catch (err) {
           toast('Không đọc được file: ' + (err.message || ''), 'error');
+          uploadBtn.disabled = false;
+          uploadBtn.innerHTML = originalHtml;
         }
       });
-      sheet.querySelector('#do-paste-import').addEventListener('click', () => {
-        runImport(sheet.querySelector('#paste-area').value, false);
+      sheet.querySelector('#do-paste-import').addEventListener('click', (e) => {
+        runImport(sheet.querySelector('#paste-area').value, false, e.currentTarget, 'Đang xử lý...');
       });
     },
   });

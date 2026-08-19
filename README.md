@@ -37,6 +37,8 @@ Số HĐTD | Người nhận nợ | Địa chỉ | Số CMND/CCCD | Số di đ�
 ```
 
 - **Đọc được cả file `.xls` (Excel 97-2003) lẫn `.xlsx`** — nhận diện đúng định dạng tự động, không cần chuyển đổi trước. Cả hai đều đọc **trực tiếp trong trình duyệt** (file .xlsx: giải nén ZIP + đọc XML; file .xls: tự phân tích cấu trúc OLE2 + BIFF8), không cần thư viện ngoài, không cần tải file lên server nào.
+- **Chọn file xong bấm nút "Tải lên" mới thật sự xử lý** (không tự chạy ngay khi vừa chọn) — tránh xử lý nhầm khi chọn sai file, và biết rõ khi nào đang xử lý (nút chuyển sang "Đang đọc file..." rồi "Đang xử lý...").
+- **Xử lý nhanh kể cả file lớn hàng trăm dòng**: toàn bộ việc lưu dữ liệu + vẽ lại màn hình chỉ chạy **1 lần duy nhất sau khi nhập xong cả file**, không chạy lặp lại theo từng dòng — file thử nghiệm 600 dòng nhập xong trong khoảng 1 giây.
 - Ô ngày tháng đọc đúng cả khi Excel lưu dạng chữ `dd/mm/yyyy` lẫn dạng ngày thật (số serial).
 - **Cột "Địa chỉ"**: chỉ cần 1 ô địa chỉ đầy đủ (vd: `Xóm 2, thôn Bình Bắc, xã Bình Sơn, tỉnh Quảng Ngãi`) — hệ thống **tự tách theo dấu phẩy** thành Xóm/Thôn/Tỉnh ngay khi nhập, không cần chia sẵn thành nhiều cột. Nhờ vậy quản trị viên lọc theo Thôn/Xóm và gán quyền cho nhân viên theo địa bàn được ngay.
 - Dòng nào thiếu dữ liệu ở 1 vài cột vẫn nhập được — hệ thống tự tính/tự sinh: mã hợp đồng tự sinh nếu thiếu Số HĐTD, Số tiền giải ngân mặc định = Số dư, Ngày đáo hạn mặc định = Ngày nhận nợ + 1 năm, Lãi suất giữ nguyên giá trị cũ nếu hợp đồng đã có (bỏ trống ở dòng cập nhật sẽ không xóa lãi suất đang lưu), hoặc = 0 nếu là hợp đồng hoàn toàn mới và bỏ trống.

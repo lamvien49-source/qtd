@@ -274,15 +274,20 @@ export async function adminResetCustomerPassword(customerId, customPassword) {
  * là 1 khách hàng hợp lệ để gắn hợp đồng vào, admin có thể tạo tài khoản
  * cho họ sau bất cứ lúc nào qua nút "Tạo User" (không mất dữ liệu hợp đồng).
  */
-export function upsertCustomerProfile({ cccd, name, phone, address }) {
+/**
+ * Phần lõi của upsertCustomerProfile — KHÔNG gọi notify(). Dùng khi cần gộp
+ * nhiều thay đổi lại rồi chỉ notify() 1 lần ở cuối (VD: nhập cả trăm dòng từ
+ * Excel cùng lúc — gọi notify() riêng từng dòng sẽ rất chậm vì mỗi lần đều
+ * lưu localStorage + vẽ lại toàn bộ trang).
+ */
+function upsertCustomerProfileCore({ cccd, name, phone, address }, existing) {
   const parsed = address != null ? parseAddress(address) : null;
   const phoneClean = phone != null ? String(phone).replace(/\s/g, '') : phone;
-  let c = findCustomerByCccd(cccd);
+  let c = existing !== undefined ? existing : findCustomerByCccd(cccd);
   if (c) {
     c.name = name || c.name;
     c.phone = phoneClean || c.phone;
     if (address) { c.address = address; Object.assign(c, parsed); }
-    notify();
     return { customer: c, isNew: false };
   }
   c = {
@@ -292,8 +297,12 @@ export function upsertCustomerProfile({ cccd, name, phone, address }) {
     failedAttempts: 0, lockedUntil: null, createdAt: new Date().toISOString(),
   };
   state.customers.push(c);
-  notify();
   return { customer: c, isNew: true };
+}
+export function upsertCustomerProfile(args) {
+  const result = upsertCustomerProfileCore(args);
+  notify();
+  return result;
 }
 
 /**
@@ -361,10 +370,11 @@ function autoContractCode(cccd) {
   return `HD-${cccd}-${String(n).padStart(3, '0')}`;
 }
 
-export function upsertContract({ customerId, code, principal, disbursedDate, dueDate, interestRate, balance, status, interestPaidUntil }) {
+/** Phần lõi của upsertContract — KHÔNG gọi notify() (xem ghi chú ở upsertCustomerProfileCore). */
+function upsertContractCore({ customerId, code, principal, disbursedDate, dueDate, interestRate, balance, status, interestPaidUntil }, existing) {
   const customer = getCustomer(customerId);
   const bal = Number(balance) || 0;
-  let ct = code ? state.contracts.find((c) => c.code === code) : null;
+  let ct = existing !== undefined ? existing : (code ? state.contracts.find((c) => c.code === code) : null);
   const data = {
     customerId,
     code: code || (ct ? ct.code : autoContractCode(customer?.cccd || customerId)),
@@ -378,6 +388,10 @@ export function upsertContract({ customerId, code, principal, disbursedDate, due
   };
   if (ct) { Object.assign(ct, data); }
   else { ct = { id: genId('hd'), ...data }; state.contracts.push(ct); }
+  return ct;
+}
+export function upsertContract(args) {
+  const ct = upsertContractCore(args);
   notify();
   return ct;
 }
@@ -472,6 +486,13 @@ export async function importFromPastedTable(text, { fullSync = false } = {}) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const result = { newProfiles: 0, newAccounts: [], existingCustomers: 0, contracts: 0, deletedContracts: 0, deletedCustomers: 0, skipped: 0, errors: [] };
   const touchedContractIds = new Set();
+  // Tra cứu bằng Map (thay vì .find() quét lại toàn bộ mảng mỗi dòng) + dùng
+  // bản "Core" không tự notify() từng dòng — cực kỳ quan trọng với file lớn
+  // (hàng trăm/nghìn dòng): notify() lưu localStorage + vẽ lại cả trang, gọi
+  // lặp lại mỗi dòng sẽ làm việc tải file chậm hẳn đi. Chỉ notify() 1 lần
+  // duy nhất sau khi xử lý xong toàn bộ file.
+  const customerByCccd = new Map(state.customers.map((c) => [c.cccd, c]));
+  const contractByCode = new Map(state.contracts.filter((c) => c.code).map((c) => [c.code, c]));
   for (const line of lines) {
     const cells = line.includes('\t') ? line.split('\t') : line.split(',');
     if (cells.length < 2) { result.skipped++; continue; }
@@ -482,9 +503,10 @@ export async function importFromPastedTable(text, { fullSync = false } = {}) {
     const cccd = (cccdRaw || '').replace(/\s/g, '');
     if (!cccd || !/^\d{9,12}$/.test(cccd)) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
 
-    const wasNew = !findCustomerByCccd(cccd);
-    const { customer } = upsertCustomerProfile({ cccd, name, phone, address }); // luôn ghi đè hồ sơ theo dữ liệu mới nhất
+    const wasNew = !customerByCccd.has(cccd);
+    const { customer } = upsertCustomerProfileCore({ cccd, name, phone, address }, customerByCccd.get(cccd)); // luôn ghi đè hồ sơ theo dữ liệu mới nhất
     if (wasNew) {
+      customerByCccd.set(cccd, customer);
       result.newProfiles++;
       const temp = genTempPassword();
       const cred = await makeCredential(temp);
@@ -495,14 +517,15 @@ export async function importFromPastedTable(text, { fullSync = false } = {}) {
     }
 
     const disbursed = parseVNDate(disbursedDate) || new Date().toISOString().slice(0, 10);
-    const ct = upsertContract({
+    const ct = upsertContractCore({
       customerId: customer.id, code: code || null,
       principal: principal ? parseVNNumber(principal) : null, disbursedDate: disbursed,
       dueDate: dueDate ? parseVNDate(dueDate) : null,
       interestRate: interestRate ? parseVNNumber(interestRate) : null,
       balance: parseVNNumber(balance), status: 'dang_vay',
       interestPaidUntil: parseVNDate(interestPaidUntil) || disbursed,
-    });
+    }, code ? contractByCode.get(code) : null);
+    contractByCode.set(ct.code, ct);
     touchedContractIds.add(ct.id);
     result.contracts++;
   }
@@ -511,8 +534,8 @@ export async function importFromPastedTable(text, { fullSync = false } = {}) {
     state.contracts = state.contracts.filter((ct) => touchedContractIds.has(ct.id));
     result.deletedContracts = before - state.contracts.length;
     result.deletedCustomers = pruneEmptyCustomerProfiles();
-    notify();
   }
+  notify(); // 1 lần duy nhất cho cả lần nhập, dù fullSync hay dán tay
   return result;
 }
 
