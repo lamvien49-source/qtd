@@ -4,6 +4,7 @@ import { pageHeader, bindHeaderActions } from '../components/shell.js';
 import { statusBadge } from '../components/ui.js';
 import { openModal } from '../components/modal.js';
 import { formatVND, formatDate, formatNumber, daysUntil, stripDiacritics } from '../utils.js';
+import { toast } from '../components/toast.js';
 
 export function renderHeader(headerEl) {
   headerEl.innerHTML = pageHeader({ title: 'Chi tiết hợp đồng', back: true });
@@ -64,40 +65,52 @@ function buildVietQrUrl({ bin, accountNo, amount, content, accountName }) {
 }
 
 /**
- * Liên kết thanh toán nhanh VietQR cho 1 app ngân hàng/ví cụ thể — mở trên
- * điện thoại sẽ nhảy thẳng vào app đó, màn hình chuyển khoản điền sẵn số
- * tiền/nội dung (dịch vụ của VietQR, cần Internet trên máy khách hàng —
- * không xem trước được trong môi trường phát triển không có mạng ở đây).
- * LƯU Ý: dl.vietqr.io bắt buộc phải có tham số "app" (đã kiểm chứng — thiếu
- * sẽ báo lỗi "Missing parameter app"), nên phải để khách chọn đúng app đang
- * dùng chứ không mở thẳng được duy nhất 1 link chung.
+ * Tải ảnh QR về máy. img.vietqr.io là ảnh khác nguồn (cross-origin) nên thử
+ * tải qua fetch+blob trước (tải file thật); nếu bị chặn CORS thì mở ảnh ở
+ * tab mới để khách tự nhấn giữ ảnh (long-press) chọn "Lưu ảnh" — luôn dùng
+ * được trên điện thoại dù fetch thất bại.
  */
-function buildVietQrPayLink({ bin, accountNo, amount, content, app }) {
-  const params = new URLSearchParams({ app, ba: `${accountNo}-${bin}`, am: String(Math.round(amount)), tn: content });
-  return `https://dl.vietqr.io/pay?${params.toString()}`;
+async function downloadQrImage(url, filename) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('fetch failed');
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(objUrl), 2000);
+  } catch (e) {
+    window.open(url, '_blank');
+    toast('Không tải trực tiếp được — đã mở ảnh, giữ tay lên ảnh và chọn "Lưu ảnh" để tải về.', 'info');
+  }
 }
 
-// Danh sách app — mã "app" theo hiểu biết tốt nhất về dl.vietqr.io, CHƯA kiểm
-// chứng được với ngân hàng thật (môi trường phát triển không có Internet ra
-// ngoài) — nếu app nào bấm vào không mở đúng, báo lại để chỉnh mã cho đúng.
-const BANK_APPS = [
-  { code: 'vietcombank', label: 'Vietcombank' },
-  { code: 'vietinbank', label: 'VietinBank' },
-  { code: 'bidv', label: 'BIDV' },
-  { code: 'agribank', label: 'Agribank' },
-  { code: 'mbbank', label: 'MB Bank' },
-  { code: 'techcombank', label: 'Techcombank' },
-  { code: 'acb', label: 'ACB' },
-  { code: 'vpbank', label: 'VPBank' },
-  { code: 'tpbank', label: 'TPBank' },
-  { code: 'sacombank', label: 'Sacombank' },
-  { code: 'vib', label: 'VIB' },
-  { code: 'shb', label: 'SHB' },
-  { code: 'hdbank', label: 'HDBank' },
-  { code: 'msb', label: 'MSB' },
-  { code: 'momo', label: 'Ví MoMo' },
-  { code: 'zalopay', label: 'ZaloPay' },
-];
+/**
+ * Chia sẻ ảnh QR qua Web Share API — trên điện thoại sẽ mở đúng bảng chọn
+ * app có sẵn của hệ điều hành (giống khi chia sẻ từ Zalo/Ảnh...), khách
+ * chọn ứng dụng ngân hàng/ví nào hỗ trợ nhận ảnh để quét là xong. Đây là
+ * API chuẩn của trình duyệt — không đi qua dịch vụ ngoài nào. Máy tính/trình
+ * duyệt không hỗ trợ chia sẻ sẽ tự chuyển sang tải ảnh về.
+ */
+async function shareQrImage(url, text) {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const file = new File([blob], 'qr-thanh-toan.png', { type: blob.type || 'image/png' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: 'Mã QR chuyển khoản', text });
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // khách tự đóng bảng chọn, không phải lỗi
+  }
+  if (navigator.share) {
+    try { await navigator.share({ title: 'Mã QR chuyển khoản', text, url }); return; }
+    catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  toast('Trình duyệt này không hỗ trợ chia sẻ trực tiếp — dùng nút "Tải ảnh QR" rồi mở app ngân hàng để quét từ ảnh.', 'info');
+}
 
 /** Ô nhập số tiền hiển thị có dấu chấm ngăn cách hàng nghìn (VD: 1.500.000) khi gõ. */
 function bindMoneyInput(inputEl, initial, onChange) {
@@ -138,9 +151,6 @@ function openPaymentModal(contract, customer, accrued) {
         body.querySelector('#sum-content').textContent = text;
         if (hasBank) {
           body.querySelector('#qr-img').src = buildVietQrUrl({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: total, content: text, accountName: org.bankAccountName });
-          body.querySelectorAll('[data-bank-app]').forEach((a) => {
-            a.href = buildVietQrPayLink({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: total, content: text, app: a.dataset.bankApp });
-          });
         }
       }
 
@@ -170,14 +180,12 @@ function openPaymentModal(contract, customer, accrued) {
           ${hasBank ? `
             <div style="text-align:center">
               <img id="qr-img" alt="Mã QR chuyển khoản" style="max-width:220px;width:100%;border:1px solid var(--border);border-radius:12px"/>
-              <div class="field-hint mt-8 mb-12">Mở app ngân hàng/ví điện tử bất kỳ hỗ trợ VietQR và quét mã này để chuyển khoản — cách chắc chắn hoạt động, dùng được với mọi ngân hàng.</div>
-            </div>
-            <div class="field mt-8">
-              <label>Hoặc thanh toán tiếp — chọn ngân hàng bạn đang dùng</label>
-              <div class="field-hint mb-8">Bấm đúng app đang dùng để mở thẳng màn hình chuyển khoản đã điền sẵn số tiền &amp; nội dung. <b class="text-danger">Tính năng đang thử nghiệm</b> — nếu app không mở đúng, dùng cách quét mã QR ở trên.</div>
-              <div style="display:flex;flex-wrap:wrap;gap:8px">
-                ${BANK_APPS.map((b) => `<a class="chip" data-bank-app="${b.code}" target="_blank" rel="noopener">${b.label}</a>`).join('')}
+              <div class="field-hint mt-8 mb-12">Quét mã bằng app ngân hàng/ví điện tử bất kỳ hỗ trợ VietQR để chuyển khoản.</div>
+              <div class="flex gap-8">
+                <button type="button" class="btn btn-primary btn-block" id="btn-share-qr">${icon('wallet', 'icon-sm')} Chọn app ngân hàng để trả</button>
               </div>
+              <button type="button" class="btn btn-outline btn-block mt-8" id="btn-download-qr">${icon('download', 'icon-sm')} Tải ảnh mã QR</button>
+              <div class="field-hint mt-8">"Chọn app ngân hàng để trả" mở bảng chọn ứng dụng có sẵn trên điện thoại (giống khi chia sẻ ảnh) — chọn đúng app ngân hàng/ví đang dùng để quét ảnh QR ngay trong app đó. Máy tính không hỗ trợ sẽ tự chuyển sang tải ảnh.</div>
             </div>
           ` : `
             <div class="field-hint text-danger">Quỹ chưa cấu hình mã QR (mã ngân hàng). Vui lòng chuyển khoản thủ công theo thông tin ở trên, hoặc liên hệ quầy giao dịch.</div>
@@ -190,6 +198,15 @@ function openPaymentModal(contract, customer, accrued) {
         if (pInput) bindMoneyInput(pInput, principalAmount, (v) => { principalAmount = v; updateSummary(); });
         const iInput = body.querySelector('#interest-input');
         if (iInput) bindMoneyInput(iInput, interestAmount, (v) => { interestAmount = v; updateSummary(); });
+        const shareBtn = body.querySelector('#btn-share-qr');
+        if (shareBtn) shareBtn.addEventListener('click', () => {
+          const { text } = content();
+          shareQrImage(body.querySelector('#qr-img').src, text);
+        });
+        const downloadBtn = body.querySelector('#btn-download-qr');
+        if (downloadBtn) downloadBtn.addEventListener('click', () => {
+          downloadQrImage(body.querySelector('#qr-img').src, `qr-thanh-toan-${contract.code}.png`);
+        });
         updateSummary();
       }
       draw();

@@ -21,8 +21,8 @@ export function renderLogin(root, onLoggedIn) {
 
         <form id="login-form">
           <div class="field" id="field-primary">
-            <label id="label-primary">Số CCCD</label>
-            <input name="primary" id="input-primary" required inputmode="numeric" placeholder="Nhập số CCCD của bạn"/>
+            <label id="label-primary">Số CCCD hoặc SĐT</label>
+            <input name="primary" id="input-primary" required inputmode="numeric" placeholder="Nhập số CCCD hoặc SĐT của bạn"/>
           </div>
           <div class="field">
             <label>Mật khẩu</label>
@@ -43,12 +43,12 @@ export function renderLogin(root, onLoggedIn) {
   function updateMode() {
     root.querySelectorAll('[data-mode]').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
     const isAdmin = mode === 'admin';
-    root.querySelector('#label-primary').textContent = isAdmin ? 'Tên đăng nhập' : 'Số CCCD';
-    root.querySelector('#input-primary').placeholder = isAdmin ? 'Nhập tên đăng nhập quản trị' : 'Nhập số CCCD của bạn';
+    root.querySelector('#label-primary').textContent = isAdmin ? 'Tên đăng nhập' : 'Số CCCD hoặc SĐT';
+    root.querySelector('#input-primary').placeholder = isAdmin ? 'Nhập tên đăng nhập quản trị' : 'Nhập số CCCD hoặc SĐT của bạn';
     root.querySelector('#input-primary').inputMode = isAdmin ? 'text' : 'numeric';
     root.querySelector('#demo-hint-body').innerHTML = isAdmin
       ? `Quản trị viên (toàn quyền): <b>admin</b> / <b>Admin@123</b><br/>Nhân viên (chỉ xem, giới hạn Thôn 1): <b>nhanvien1</b> / <b>Staff@123</b>`
-      : `Số CCCD: <b>079300012345</b><br/>Mật khẩu: <b>Demo@123</b><br/><span class="text-faint">(sẽ yêu cầu đổi mật khẩu ngay lần đầu đăng nhập)</span>`;
+      : `Số CCCD hoặc SĐT: <b>079300012345</b> hoặc <b>0901 000 001</b><br/>Mật khẩu: <b>Demo@123</b><br/><span class="text-faint">(sẽ yêu cầu đổi mật khẩu ngay lần đầu đăng nhập)</span>`;
   }
   updateMode();
 

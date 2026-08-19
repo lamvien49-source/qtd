@@ -6,15 +6,15 @@
 
 Một cổng thông tin cho quỹ tín dụng, gồm:
 
-- **Phía khách hàng**: đăng nhập bằng số CCCD + mật khẩu (admin cấp sẵn, bắt buộc đổi mật khẩu lần đầu) → xem hợp đồng vay của mình (dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi phát sinh đến hiện tại, hỗ trợ nhiều hợp đồng/người) → **Thanh toán**: chọn trả gốc (lãi tính cố định theo hợp đồng) hoặc trả lãi (mặc định lấy lãi phát sinh, có thể sửa — ô nhập tự có dấu chấm ngăn cách hàng nghìn khi gõ), tự tạo nội dung chuyển khoản + **mã QR VietQR** để quét chuyển tiền, hoặc bấm **"Thanh toán tiếp"** chọn đúng ngân hàng đang dùng để mở thẳng app đó → gửi yêu cầu tư vấn / mở khoản vay mới.
-- **Phía quản trị** (`/#/admin`): quản lý khách hàng (nhập **1 ô địa chỉ**, hệ thống tự tách Xóm/Thôn/Tỉnh) — **đọc trực tiếp file Excel sổ theo dõi vay đang dùng (`.xls` hoặc `.xlsx`)** tải lên, tự khớp đúng cột, tự cập nhật/tạo tài khoản khách hàng, không cần thư viện ngoài. Trang **Khách hàng & Hợp đồng**: mỗi khách chỉ 1 hợp đồng thì hiện gọn Gốc/Lãi ngay trên dòng của khách; khách nhiều hợp đồng thì mỗi hợp đồng 1 dòng riêng (mã hợp đồng, trạng thái, Gốc/Lãi) — **bấm vào mới ra đầy đủ chi tiết** (số tiền gốc, dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi suất, lãi đến nay, SĐT) giống hệt màn hình khách hàng, kèm nút **nhắn SMS báo lãi cho khách** ngay tại đó — **dữ liệu hợp đồng chỉ đọc, không có ô sửa** (lấy từ Excel, muốn cập nhật thì nhập lại file mới). Có thể **sắp xếp theo Gốc/Lãi tăng dần-giảm dần**. Số điện thoại bấm vào **gọi luôn** (`tel:`). Trang **Tổng quan** có thêm cảnh báo **hợp đồng gần đến hạn (≤15 ngày)** bên cạnh hợp đồng quá hạn. Ngoài ra: lọc theo Thôn/Xóm và "có nợ quá hạn", tạo tài khoản khách hàng thủ công, cấp lại mật khẩu, xem/xử lý yêu cầu tư vấn, chỉnh banner + thông tin quỹ tín dụng + thông tin nhận thanh toán (QR) + lãi suất mặc định khi nhập liệu.
-- **Phân quyền nhân viên**: tài khoản quản trị viên (`super`) toàn quyền, vào **Quản lý nhân viên** để **tạo tài khoản nhân viên** (`staff`) chỉ xem (không sửa/xóa) và **gán quyền xem theo Thôn** — nhân viên chỉ thấy khách hàng/hợp đồng/yêu cầu thuộc các Thôn được gán (kể cả cảnh báo gần đến hạn ở Tổng quan), dùng cho việc theo dõi nợ quá hạn theo địa bàn phụ trách.
+- **Phía khách hàng**: đăng nhập bằng **số CCCD hoặc số điện thoại** + mật khẩu (admin cấp sẵn, bắt buộc đổi mật khẩu lần đầu) → xem hợp đồng vay của mình (dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi phát sinh đến hiện tại, hỗ trợ nhiều hợp đồng/người) → **Thanh toán**: chọn trả gốc (lãi tính cố định theo hợp đồng) hoặc trả lãi (mặc định lấy lãi phát sinh, có thể sửa — ô nhập tự có dấu chấm ngăn cách hàng nghìn khi gõ), tự tạo nội dung chuyển khoản + **mã QR VietQR** để quét chuyển tiền, bấm **"Chọn app ngân hàng để trả"** để mở bảng chọn ứng dụng có sẵn trên điện thoại (chia sẻ ảnh QR), hoặc **tải ảnh QR về máy** → gửi yêu cầu tư vấn / mở khoản vay mới.
+- **Phía quản trị** (`/#/admin`): quản lý khách hàng (nhập **1 ô địa chỉ**, hệ thống tự tách Xóm/Thôn/Tỉnh) — **đọc trực tiếp file Excel sổ theo dõi vay đang dùng (`.xls` hoặc `.xlsx`)** tải lên, tự khớp đúng cột, tự cập nhật/tạo tài khoản khách hàng, không cần thư viện ngoài. Trang **Khách hàng & Hợp đồng**: tên khách hàng luôn hiện trọn 1 dòng riêng (không bị cắt bớt dù tên dài); mỗi khách chỉ 1 hợp đồng thì hiện gọn Gốc/Lãi ngang hàng với thông tin khách, bấm vào là ra thẳng chi tiết hợp đồng; khách nhiều hợp đồng thì mỗi hợp đồng 1 dòng riêng (mã hợp đồng, trạng thái, Gốc/Lãi) — **bấm vào mới ra đầy đủ chi tiết** (số tiền gốc, dư nợ, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi suất, lãi đến nay, SĐT) giống hệt màn hình khách hàng, kèm nút **nhắn SMS báo lãi cho khách** ngay tại đó — **dữ liệu hợp đồng chỉ đọc, không có ô sửa** (lấy từ Excel, muốn cập nhật thì nhập lại file mới). Có thể **lọc Thôn/Xóm chọn nhiều mục cùng lúc** và **sắp xếp theo Gốc/Lãi tăng dần-giảm dần**. Số điện thoại bấm vào **gọi luôn** (`tel:`). Trang **Tổng quan** có thêm ô đếm + danh sách **hợp đồng gần đến hạn**, tiêu đề tô màu kèm số lượng để dễ chú ý. Ngoài ra: tạo tài khoản khách hàng thủ công, cấp lại mật khẩu, xem/xử lý yêu cầu tư vấn, chỉnh banner + thông tin quỹ tín dụng + thông tin nhận thanh toán (QR) + lãi suất mặc định khi nhập liệu.
+- **Phân quyền nhân viên**: tài khoản quản trị viên (`super`) toàn quyền, vào **Quản lý nhân viên** → **"Tạo nhân viên"** để tạo tài khoản + đặt mật khẩu (hoặc để trống cho tự sinh) + **gán quyền xem ngay trong cùng 1 form** — chọn cả 1 Thôn (xem hết mọi Xóm trong đó) hoặc tích riêng từng Xóm cụ thể nếu chỉ cần 1 phần của Thôn. Nhân viên chỉ thấy khách hàng/hợp đồng/yêu cầu thuộc địa bàn được gán (kể cả ở Tổng quan), dùng cho việc theo dõi nợ quá hạn theo địa bàn phụ trách.
 
 ## Tài khoản dùng thử
 
 | Vai trò | Đăng nhập | Mật khẩu |
 |---|---|---|
-| Khách hàng | CCCD: `079300012345` | `Demo@123` (bắt buộc đổi ngay lần đầu) |
+| Khách hàng | CCCD `079300012345` hoặc SĐT `0901 000 001` | `Demo@123` (bắt buộc đổi ngay lần đầu) |
 | Quản trị viên (toàn quyền) | `admin` | `Admin@123` |
 | Nhân viên (chỉ xem, giới hạn Thôn 1) | `nhanvien1` | `Staff@123` |
 
@@ -43,26 +43,30 @@ Số HĐTD | Người nhận nợ | Địa chỉ | Số CMND/CCCD | Số di đ�
 
 ## Phân quyền theo địa bàn (Thôn/Xóm)
 
-Quản trị viên vào **Quản lý nhân viên** để tạo tài khoản nhân viên, chọn các **Thôn** nhân viên đó được phép xem. Nhân viên đăng nhập sẽ:
-- Chỉ thấy khách hàng, hợp đồng, yêu cầu tư vấn thuộc Thôn được gán (ở mọi trang: Tổng quan, Khách hàng & Hợp đồng, Yêu cầu tư vấn).
+Quản trị viên vào **Quản lý nhân viên → "Tạo nhân viên"** — 1 form duy nhất gồm tên đăng nhập, mật khẩu (đặt sẵn hoặc để trống cho tự sinh) và phân quyền xem:
+- Tích cả 1 **Thôn** → nhân viên xem được mọi Xóm trong Thôn đó.
+- Tích riêng từng **Xóm** (không tích cả Thôn chứa nó) → chỉ xem đúng (các) Xóm đó, phần còn lại của Thôn vẫn bị ẩn.
+
+Nhân viên đăng nhập sẽ:
+- Chỉ thấy khách hàng, hợp đồng, yêu cầu tư vấn thuộc Thôn/Xóm được gán (ở mọi trang: Tổng quan, Khách hàng & Hợp đồng, Yêu cầu tư vấn).
 - Không thấy mục **Cài đặt** và **Quản lý nhân viên** (chỉ quản trị viên `super` mới truy cập được, kể cả gõ thẳng địa chỉ cũng bị chuyển hướng ra ngoài).
 - Không sửa/xóa được khách hàng, hợp đồng — chỉ xem.
-- Danh sách khách hàng có thể lọc thêm theo Thôn/Xóm cụ thể và theo "Có nợ quá hạn" để tra cứu nhanh.
+- Danh sách khách hàng lọc thêm được theo Thôn/Xóm (**chọn được nhiều mục cùng lúc**) và theo "Có nợ quá hạn" để tra cứu nhanh.
 
 ## Khách hàng & Hợp đồng (quản trị viên) — dữ liệu chỉ đọc
 
-Danh sách chính giữ **gọn**, chỉ đủ để lướt nhanh:
-- Khách chỉ có **1 hợp đồng**: dòng khách hàng hiện thẳng **Gốc / Lãi** của hợp đồng đó, không có dòng hợp đồng riêng.
-- Khách có **nhiều hợp đồng**: mỗi hợp đồng 1 dòng gọn — "Hợp đồng: {mã}", trạng thái (Đang vay/Quá hạn/Đã tất toán), Gốc/Lãi bên phải.
+Danh sách chính giữ **gọn**, chỉ đủ để lướt nhanh — tên khách hàng luôn hiện trọn 1 dòng riêng phía trên (không bị cắt bớt dù tên dài), thông tin/số tiền nằm ở dòng dưới:
+- Khách chỉ có **1 hợp đồng**: dòng thông tin khách hiện thẳng **Gốc / Lãi** của hợp đồng đó ngang hàng với CCCD/SĐT, không có dòng hợp đồng riêng — **bấm vào đúng ô Gốc/Lãi là ra thẳng chi tiết hợp đồng luôn**, không cần qua màn hình khách hàng trước.
+- Khách có **nhiều hợp đồng**: mỗi hợp đồng 1 dòng gọn — "Hợp đồng: {mã}", trạng thái (Đang vay/Quá hạn/Đã tất toán), Gốc/Lãi bên phải, bấm vào ra chi tiết hợp đồng đó.
 - Có thể **sắp xếp** theo Gốc hoặc Lãi, tăng dần/giảm dần (nút "Sắp xếp" cạnh bộ lọc Thôn/Xóm) — dùng để tìm nhanh khoản vay lớn nhất/nhỏ nhất.
 - **Bấm vào mới ra đầy đủ chi tiết**: số tiền vay, dư nợ, lãi suất, ngày vay, ngày đến hạn, đã trả lãi đến ngày, lãi đến nay, số điện thoại (bấm gọi luôn), và nút **"Nhắn SMS báo lãi cho khách"** (mở sẵn app nhắn tin trên điện thoại quản trị viên với nội dung lãi hiện tại, không cần dịch vụ SMS ngoài, không tốn phí phần mềm — dùng đúng SMS/data của máy quản trị viên).
 - **Không có ô nhập/nút "Sửa"** — toàn bộ dữ liệu hợp đồng lấy từ Excel, quản trị viên chỉ có nút xóa (dùng khi nhập nhầm); muốn sửa số liệu thì sửa trong file Excel rồi nhập lại. Cột "Kỳ hạn (tháng)" đã bỏ hẳn khỏi hệ thống vì file thật không có và không cần.
 
-Nút **"Tạo tài khoản khách hàng"** dùng khi cần tạo trước 1 tài khoản đăng nhập cho khách chưa có khoản vay nào (chỉ CCCD/họ tên/SĐT/địa chỉ, không có hợp đồng — hợp đồng chỉ vào qua Excel).
+Nút **"Tạo tài khoản khách hàng"** dùng khi cần tạo trước 1 tài khoản đăng nhập cho khách chưa có khoản vay nào (CCCD + họ tên + SĐT + địa chỉ — nên nhập cả CCCD lẫn SĐT vì khách đăng nhập được bằng cả 2 số; không có hợp đồng — hợp đồng chỉ vào qua Excel).
 
 ## Cảnh báo gần đến hạn
 
-Trang **Tổng quan** (cả quản trị viên và nhân viên) có thêm ô đếm + danh sách **"Gần đến hạn"** — các hợp đồng còn ≤15 ngày nữa tới ngày đến hạn (chưa quá hạn), cạnh ô hợp đồng quá hạn, để chủ động nhắc khách trước khi trễ hạn. Nhân viên chỉ thấy hợp đồng thuộc Thôn được gán, giống mọi số liệu khác trên trang này.
+Trang **Tổng quan** (cả quản trị viên và nhân viên) có thêm ô đếm + danh sách **"Gần đến hạn"** — các hợp đồng còn tối đa 15 ngày nữa tới ngày đến hạn (chưa quá hạn), cạnh ô hợp đồng quá hạn, để chủ động nhắc khách trước khi trễ hạn. Cả 2 tiêu đề "Hợp đồng quá hạn" và "Gần đến hạn" đều tô màu (đỏ/cam) kèm số lượng ngay trong tiêu đề (VD: "Hợp đồng quá hạn (05)") để dễ chú ý. Nhân viên chỉ thấy hợp đồng thuộc Thôn/Xóm được gán, giống mọi số liệu khác trên trang này.
 
 ## Thanh toán bằng mã QR (VietQR)
 
@@ -71,14 +75,15 @@ Trang **Tổng quan** (cả quản trị viên và nhân viên) có thêm ô đ�
 - **Trả lãi**: mặc định lấy đúng "Lãi đến nay", khách có thể sửa lại số tiền (cùng kiểu ô nhập có dấu chấm).
 - Nội dung chuyển khoản tự sinh theo mẫu: `HỌ TÊN THANH TOAN GOC/LAI HDTD MÃ_HỢP_ĐỒNG` (bỏ dấu, viết hoa, không kèm số tiền trong nội dung vì số tiền đã có ở dòng riêng và trong mã QR).
 - Hiển thị mã **QR VietQR** (dùng dịch vụ ảnh công khai `img.vietqr.io`, cần Internet khi khách hàng dùng thật — trong môi trường phát triển không có mạng nên không xem trước được ảnh QR, nhưng sẽ hiển thị bình thường khi deploy thật). **Đây là cách chắc chắn hoạt động** với mọi ngân hàng/ví hỗ trợ VietQR.
-- Mục **"Thanh toán tiếp"**: danh sách ~16 ngân hàng/ví phổ biến (Vietcombank, VietinBank, BIDV, Agribank, MB Bank, Techcombank, ACB, VPBank, TPBank, Sacombank, VIB, SHB, HDBank, MSB, MoMo, ZaloPay) — bấm đúng cái khách đang dùng sẽ mở liên kết thanh toán nhanh của VietQR (`dl.vietqr.io`) đã điền sẵn số tiền/nội dung, đưa thẳng vào app đó. **Một trang web thuần không thể tự biết khách đang cài app ngân hàng nào** (không có quyền truy vấn danh sách app trên máy) nên vẫn cần khách bấm chọn đúng 1 lần — đây là cách gần nhất với "tự động mở app". **Đang thử nghiệm, chưa kiểm chứng được:** `dl.vietqr.io` yêu cầu tham số xác định đúng ngân hàng (thiếu sẽ báo lỗi `Missing parameter app`); mã cho từng ngân hàng ở trên là theo hiểu biết tốt nhất, **chưa test được với app ngân hàng thật** vì môi trường phát triển không có Internet ra ngoài — cần bạn tự thử trên điện thoại thật với vài ngân hàng phổ biến trước, báo lại app nào không mở đúng để chỉnh mã. Quét mã QR ở trên vẫn luôn là phương án chắc chắn hoạt động.
+- Nút **"Chọn app ngân hàng để trả"**: dùng Web Share API chuẩn của trình duyệt (`navigator.share`) — bấm vào sẽ mở đúng **bảng chọn ứng dụng có sẵn trên điện thoại** (giống khi chia sẻ ảnh từ Zalo/Ảnh...), khách chọn app ngân hàng/ví nào hỗ trợ nhận ảnh để tự quét mã QR trong app đó. Đây là API trình duyệt thật, không đi qua trang trung gian nào (đã bỏ hẳn cách cũ qua `dl.vietqr.io` vì bắt buộc chọn đúng ngân hàng theo mã chưa xác minh được và bạn báo là không hoạt động). Máy tính/trình duyệt không hỗ trợ chia sẻ sẽ tự báo và gợi ý dùng nút tải ảnh.
+- Nút **"Tải ảnh mã QR"**: tải file ảnh QR về máy (hoặc mở ảnh để nhấn giữ lưu nếu trình duyệt chặn tải trực tiếp) — dùng khi muốn lưu lại, gửi cho người khác chuyển giúp, hoặc mở từ thư viện ảnh trong app ngân hàng để quét.
 - Thông tin ngân hàng (tên NH, mã BIN VietQR, số tài khoản, tên chủ tài khoản) chỉnh tại **Cài đặt**. **Đã điền sẵn theo thông tin bạn cung cấp (Ngân hàng Hợp tác xã Việt Nam - Co-op Bank, mã BIN 970446) nhưng cần bạn xác minh lại chính xác** tại vietqr.io hoặc với ngân hàng trước khi dùng thật — mã BIN sai sẽ tạo QR không quét được hoặc chuyển nhầm nơi nhận.
 
 ## Giới hạn của bản demo (quan trọng)
 
 - **Không có backend/database thật** — dữ liệu lưu trong `localStorage` của trình duyệt, mỗi thiết bị/trình duyệt là 1 kho dữ liệu riêng biệt, không đồng bộ giữa các máy.
 - **Không có OTP** — chỉ có tài khoản do admin cấp (CCCD + mật khẩu tạm) + bắt buộc đổi mật khẩu lần đầu + khóa tạm sau nhiều lần đăng nhập sai, KHÔNG thay thế được lớp bảo mật OTP nếu triển khai thật.
-- **"Thanh toán tiếp"** (mở thẳng app ngân hàng) phụ thuộc dịch vụ `dl.vietqr.io` bên ngoài và mã ngân hàng chưa kiểm chứng được (xem mục "Thanh toán bằng mã QR" ở trên) — cần kiểm tra lại trên điện thoại thật trước khi dùng chính thức; mã QR VietQR để quét thủ công vẫn luôn hoạt động như phương án chính.
+- **"Chọn app ngân hàng để trả"** dùng Web Share API của trình duyệt — hiện đúng bảng chọn app trên điện thoại, nhưng việc app ngân hàng cụ thể có nhận & tự quét được ảnh chia sẻ hay không tùy vào từng app (đa số hỗ trợ "quét QR từ ảnh" trong mục chuyển khoản); nếu app không tự nhận diện được, khách vẫn mở được ảnh và quét thủ công như bình thường. Chưa kiểm thử được trên điện thoại thật vì môi trường phát triển không có Internet ra ngoài — mã QR để quét trực tiếp bằng camera vẫn luôn là phương án chắc chắn hoạt động nhất.
 - **"Nhắn SMS báo lãi"** mở app nhắn tin có sẵn trên điện thoại quản trị viên (liên kết `sms:`) với nội dung soạn sẵn — quản trị viên vẫn phải tự bấm Gửi và tin nhắn tính phí theo SIM/gói cước của máy đó, KHÔNG phải hệ thống tự động gửi SMS hàng loạt qua tổng đài SMS Brandname.
 - Mật khẩu được băm bằng `crypto.subtle` (SHA-256 + muối) ngay trong trình duyệt cho đúng nguyên tắc, nhưng vì không có server thật đứng sau nên đây **chỉ minh họa luồng**, chưa đạt chuẩn bảo mật để vận hành thật.
 

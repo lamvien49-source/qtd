@@ -119,19 +119,28 @@ export function parseAddress(raw) {
 // ------------------------------------------------------------
 export function listCustomers(filters = {}) {
   let list = state.customers;
-  if (filters.thon) list = list.filter((c) => c.thon === filters.thon);
-  if (filters.xom) list = list.filter((c) => c.xom === filters.xom);
+  const thonList = [].concat(filters.thon || []).filter(Boolean);
+  const xomList = [].concat(filters.xom || []).filter(Boolean);
+  if (thonList.length) list = list.filter((c) => thonList.includes(c.thon));
+  if (xomList.length) list = list.filter((c) => xomList.includes(c.xom));
   if (filters.adminId) {
     const admin = getAdmin(filters.adminId);
     if (admin && admin.role === 'staff') {
-      const allowed = new Set(admin.allowedThon || []);
-      list = list.filter((c) => allowed.has(c.thon));
+      const allowedThon = new Set(admin.allowedThon || []);
+      const allowedXom = new Set(admin.allowedXom || []);
+      list = list.filter((c) => allowedThon.has(c.thon) || allowedXom.has(c.xom));
     }
   }
   return list;
 }
 export function getCustomer(id) { return state.customers.find((c) => c.id === id); }
 export function findCustomerByCccd(cccd) { return state.customers.find((c) => c.cccd === String(cccd).trim()); }
+/** Tìm khách hàng theo CCCD HOẶC số điện thoại — dùng cho đăng nhập, khách có thể dùng 1 trong 2 số. */
+export function findCustomerByIdentifier(value) {
+  const v = String(value || '').trim();
+  const vNoSpace = v.replace(/\s/g, '');
+  return state.customers.find((c) => c.cccd === v || (c.phone && c.phone.replace(/\s/g, '') === vNoSpace));
+}
 
 export function listContractsByCustomer(customerId) {
   return state.contracts.filter((c) => c.customerId === customerId).sort((a, b) => new Date(b.disbursedDate) - new Date(a.disbursedDate));
@@ -155,10 +164,10 @@ export function accruedInterest(contract, asOf = new Date()) {
   return Math.round(contract.balance * days * (contract.interestRate / 100) / 365);
 }
 
-/** Đăng nhập khách hàng bằng CCCD + mật khẩu. */
-export async function loginCustomer(cccd, password) {
-  const c = findCustomerByCccd(cccd);
-  if (!c) return { ok: false, reason: 'Không tìm thấy tài khoản với số CCCD này.' };
+/** Đăng nhập khách hàng bằng CCCD HOẶC số điện thoại + mật khẩu. */
+export async function loginCustomer(identifier, password) {
+  const c = findCustomerByIdentifier(identifier);
+  if (!c) return { ok: false, reason: 'Không tìm thấy tài khoản với số CCCD/số điện thoại này.' };
   if (c.lockedUntil && c.lockedUntil > Date.now()) {
     const mins = Math.ceil((c.lockedUntil - Date.now()) / 60000);
     return { ok: false, reason: `Tài khoản tạm khóa do nhập sai nhiều lần. Thử lại sau ${mins} phút.` };
@@ -171,7 +180,7 @@ export async function loginCustomer(cccd, password) {
       c.failedAttempts = 0;
     }
     notify();
-    return { ok: false, reason: 'Số CCCD hoặc mật khẩu không đúng.' };
+    return { ok: false, reason: 'Số CCCD/số điện thoại hoặc mật khẩu không đúng.' };
   }
   c.failedAttempts = 0;
   c.lockedUntil = null;
@@ -224,8 +233,13 @@ export function distinctThon() {
   return [...new Set(state.customers.map((c) => c.thon).filter(Boolean))].sort();
 }
 export function distinctXom(thon) {
-  const list = thon ? state.customers.filter((c) => c.thon === thon) : state.customers;
+  const thonList = [].concat(thon || []).filter(Boolean);
+  const list = thonList.length ? state.customers.filter((c) => thonList.includes(c.thon)) : state.customers;
   return [...new Set(list.map((c) => c.xom).filter(Boolean))].sort();
+}
+/** Cây Thôn -> danh sách Xóm trong thôn đó — dùng cho phân quyền nhân viên theo từng cấp. */
+export function thonXomTree() {
+  return distinctThon().map((thon) => ({ thon, xomList: distinctXom(thon) }));
 }
 
 /** Sinh mã hợp đồng tự động khi không có sẵn (không bắt buộc phải nhập). */
@@ -347,26 +361,34 @@ export function getAdmin(id) { return state.admins.find((a) => a.id === id); }
 export function listAdmins() { return state.admins; }
 export function isSuperAdmin(id) { return getAdmin(id)?.role === 'super'; }
 
-/** Quản trị viên (role 'super') tạo tài khoản nhân viên (role 'staff'), giới hạn xem theo danh sách Thôn. */
-export async function addStaffAdmin({ username, name, allowedThon }) {
+/**
+ * Quản trị viên (role 'super') tạo tài khoản nhân viên (role 'staff') — có
+ * tên đăng nhập + mật khẩu (tự sinh nếu không nhập) + phân quyền xem ngay
+ * trong lúc tạo. Phân quyền 2 cấp: allowedThon (xem trọn cả Thôn, gồm mọi
+ * Xóm trong đó) và allowedXom (chỉ xem riêng 1 vài Xóm cụ thể dù Thôn chứa
+ * nó không được cấp trọn).
+ */
+export async function addStaffAdmin({ username, name, password, allowedThon, allowedXom }) {
   const uname = String(username || '').trim();
   if (!uname) throw new Error('Cần nhập tên đăng nhập');
   if (state.admins.some((a) => a.username === uname)) throw new Error('Tên đăng nhập đã tồn tại');
-  const temp = genTempPassword();
-  const cred = await makeCredential(temp);
+  const finalPassword = password && password.trim() ? password.trim() : genTempPassword();
+  const cred = await makeCredential(finalPassword);
   const staff = {
     id: genId('staff'), username: uname, name: name || uname, role: 'staff',
     allowedThon: Array.isArray(allowedThon) ? allowedThon : [],
+    allowedXom: Array.isArray(allowedXom) ? allowedXom : [],
     ...cred, createdAt: new Date().toISOString(),
   };
   state.admins.push(staff);
   notify();
-  return { staff, tempPassword: temp };
+  return { staff, tempPassword: finalPassword };
 }
-export function updateStaffPermissions(id, allowedThon) {
+export function updateStaffPermissions(id, allowedThon, allowedXom) {
   const a = getAdmin(id);
   if (!a || a.role !== 'staff') return;
   a.allowedThon = Array.isArray(allowedThon) ? allowedThon : [];
+  a.allowedXom = Array.isArray(allowedXom) ? allowedXom : [];
   notify();
 }
 export async function resetStaffPassword(id) {
@@ -443,8 +465,8 @@ async function seedDemoData() {
   const adminCred = await makeCredential('Admin@123');
   const staffCred = await makeCredential('Staff@123');
   const admins = [
-    { id: 'admin_1', username: 'admin', name: 'Quản trị viên', role: 'super', allowedThon: [], ...adminCred },
-    { id: 'staff_1', username: 'nhanvien1', name: 'Nhân viên địa bàn Thôn 1', role: 'staff', allowedThon: ['Thôn 1'], ...staffCred, createdAt: new Date().toISOString() },
+    { id: 'admin_1', username: 'admin', name: 'Quản trị viên', role: 'super', allowedThon: [], allowedXom: [], ...adminCred },
+    { id: 'staff_1', username: 'nhanvien1', name: 'Nhân viên địa bàn Thôn 1', role: 'staff', allowedThon: ['Thôn 1'], allowedXom: [], ...staffCred, createdAt: new Date().toISOString() },
   ];
 
   const demoDefs = [

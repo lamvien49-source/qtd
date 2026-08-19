@@ -21,10 +21,16 @@ const SORT_OPTIONS = [
 const SORT_LABEL = Object.fromEntries(SORT_OPTIONS.map((o) => [o.value, o.label]));
 
 let query = '';
-let filterThon = 'all';
-let filterXom = 'all';
+let filterThon = []; // rỗng = Tất cả — có thể tích chọn nhiều Thôn cùng lúc
+let filterXom = [];  // rỗng = Tất cả — có thể tích chọn nhiều Xóm cùng lúc
 let onlyOverdue = false;
 let sortMode = 'default';
+
+function multiPillLabel(prefix, values) {
+  if (!values.length) return `${prefix}: Tất cả `;
+  if (values.length === 1) return `${prefix}: ${values[0]} `;
+  return `${prefix}: ${values.length} đã chọn `;
+}
 
 function currentAdmin() {
   const session = S.getSession();
@@ -34,7 +40,7 @@ function currentAdmin() {
 export function render(contentEl, filterEl) {
   const admin = currentAdmin();
   const isStaff = admin.role === 'staff';
-  filterThon = 'all'; filterXom = 'all'; sortMode = 'default'; // reset bộ lọc mỗi lần vào trang
+  filterThon = []; filterXom = []; sortMode = 'default'; // reset bộ lọc mỗi lần vào trang
 
   filterEl.innerHTML = `
     <div style="padding:10px 14px 0">
@@ -68,23 +74,23 @@ export function render(contentEl, filterEl) {
     filterEl.querySelector('#pill-thon').addEventListener('click', () => {
       const allowedThon = isStaff ? (admin.allowedThon || []) : S.distinctThon();
       openPicker({
-        title: 'Chọn Thôn', selected: filterThon,
-        options: [{ value: 'all', label: 'Tất cả' }, ...allowedThon.map((t) => ({ value: t, label: t }))],
-        onSelect: (val) => {
-          filterThon = val; filterXom = 'all';
-          filterEl.querySelector('#pill-thon').firstChild.textContent = val === 'all' ? 'Thôn: Tất cả ' : `Thôn: ${val} `;
+        title: 'Chọn Thôn (chọn được nhiều)', selected: filterThon, multiSelect: true,
+        options: allowedThon.map((t) => ({ value: t, label: t })),
+        onSelect: (vals) => {
+          filterThon = vals; filterXom = [];
+          filterEl.querySelector('#pill-thon').firstChild.textContent = multiPillLabel('Thôn', filterThon);
           draw();
         },
       });
     });
     filterEl.querySelector('#pill-xom').addEventListener('click', () => {
-      const xomList = S.distinctXom(filterThon === 'all' ? undefined : filterThon);
+      const xomList = S.distinctXom(filterThon.length ? filterThon : undefined);
       openPicker({
-        title: 'Chọn Xóm', selected: filterXom,
-        options: [{ value: 'all', label: 'Tất cả' }, ...xomList.map((x) => ({ value: x, label: x }))],
-        onSelect: (val) => {
-          filterXom = val;
-          filterEl.querySelector('#pill-xom').firstChild.textContent = val === 'all' ? 'Xóm: Tất cả ' : `Xóm: ${val} `;
+        title: 'Chọn Xóm (chọn được nhiều)', selected: filterXom, multiSelect: true,
+        options: xomList.map((x) => ({ value: x, label: x })),
+        onSelect: (vals) => {
+          filterXom = vals;
+          filterEl.querySelector('#pill-xom').firstChild.textContent = multiPillLabel('Xóm', filterXom);
           draw();
         },
       });
@@ -106,8 +112,8 @@ export function render(contentEl, filterEl) {
   function draw() {
     let list = S.listCustomers({
       adminId: isStaff ? admin.id : undefined,
-      thon: filterThon === 'all' ? undefined : filterThon,
-      xom: filterXom === 'all' ? undefined : filterXom,
+      thon: filterThon,
+      xom: filterXom,
     });
     if (query.trim()) {
       const q = query.trim().toLowerCase();
@@ -133,14 +139,18 @@ export function render(contentEl, filterEl) {
         const hasOverdue = contracts.some((ct) => ct.status === 'qua_han');
         return `
         <div class="card card-pad mb-8">
+          <div class="flex items-center gap-6 mb-8" style="flex-wrap:wrap">
+            <span style="font-size:15px;font-weight:700">${c.name}</span>
+            ${hasOverdue ? `<span class="badge badge-red">Quá hạn</span>` : ''}
+            ${c.mustChangePassword ? `<span class="badge badge-yellow">Chưa đổi MK</span>` : ''}
+          </div>
           <div class="list-row" data-id="${c.id}" style="cursor:pointer;padding:0">
             <div class="row-thumb" style="background:${colorFor(c.id)}">${initials(c.name)}</div>
             <div class="row-main">
-              <div class="row-title">${c.name}${hasOverdue ? ` <span class="badge badge-red">Quá hạn</span>` : ''}${c.mustChangePassword ? ` <span class="badge badge-yellow">Chưa đổi MK</span>` : ''}</div>
               <div class="row-sub">${maskCccd(c.cccd)} · ${c.phone || 'Chưa có SĐT'}</div>
               <div class="row-sub">${[c.xom, c.thon, c.tinh].filter(Boolean).join(', ') || c.address || 'Chưa có địa bàn'}</div>
             </div>
-            ${contracts.length === 1 ? contractAmountsHtml(contracts[0]) : ''}
+            ${contracts.length === 1 ? `<div data-view-contract="${contracts[0].id}" data-customer-id="${c.id}" style="cursor:pointer">${contractAmountsHtml(contracts[0])}</div>` : ''}
           </div>
           ${contracts.length > 1 ? `
           <div style="border-top:1px dashed var(--border);margin-top:6px">
@@ -173,7 +183,11 @@ function openCustomerForm(customer) {
       <form id="cf">
         <div class="field"><label>Số CCCD</label><input name="cccd" required pattern="\\d{9,12}" value="${customer ? customer.cccd : ''}" ${isEdit ? 'readonly' : ''}/></div>
         <div class="field"><label>Họ tên</label><input name="name" required value="${customer ? esc(customer.name) : ''}"/></div>
-        <div class="field"><label>Số điện thoại</label><input name="phone" value="${customer ? esc(customer.phone) : ''}"/></div>
+        <div class="field">
+          <label>Số điện thoại</label>
+          <input name="phone" value="${customer ? esc(customer.phone) : ''}"/>
+          <div class="field-hint">Khách hàng đăng nhập được bằng CCCD hoặc số điện thoại này — nên nhập cả 2 để khách dùng số nào cũng tra được đúng hợp đồng.</div>
+        </div>
         <div class="field">
           <label>Địa chỉ</label>
           <input name="address" value="${customer ? esc(customer.address) : ''}" placeholder="VD: Xóm 01, thôn Bình Nguyên, xã Bình Sơn, tỉnh Quảng Ngãi"/>
