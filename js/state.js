@@ -214,7 +214,7 @@ export async function adminResetCustomerPassword(customerId) {
   return temp;
 }
 
-export async function upsertCustomer({ cccd, name, phone, address }) {
+export async function upsertCustomer({ cccd, name, phone, address, password }) {
   const parsed = address != null ? parseAddress(address) : null;
   let c = findCustomerByCccd(cccd);
   if (c) {
@@ -224,7 +224,7 @@ export async function upsertCustomer({ cccd, name, phone, address }) {
     notify();
     return { customer: c, isNew: false, tempPassword: null };
   }
-  const temp = genTempPassword();
+  const temp = password && password.trim() ? password.trim() : genTempPassword();
   const cred = await makeCredential(temp);
   c = {
     id: genId('cust'), cccd: String(cccd).trim(), name, phone: phone || '',

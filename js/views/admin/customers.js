@@ -193,7 +193,13 @@ function openCustomerForm(customer) {
           <input name="address" value="${customer ? esc(customer.address) : ''}" placeholder="VD: Xóm 01, thôn Bình Nguyên, xã Bình Sơn, tỉnh Quảng Ngãi"/>
           <div class="field-hint">Hệ thống tự tách Xóm/Thôn/Tỉnh theo dấu phẩy để lọc & phân quyền, không cần nhập riêng từng ô.</div>
         </div>
-        ${!isEdit ? `<div class="field-hint">Hệ thống sẽ tự tạo mật khẩu tạm cho khách hàng, hiển thị sau khi lưu.</div>` : ''}
+        ${!isEdit ? `
+        <div class="field">
+          <label>Mật khẩu đăng nhập</label>
+          <input name="password" placeholder="Để trống sẽ tự sinh mật khẩu"/>
+          <div class="field-hint">Có thể tự đặt mật khẩu ngay ở đây để báo cho khách, hoặc để trống cho hệ thống tự sinh — mật khẩu sẽ hiện ra sau khi lưu để gửi cho khách hàng đăng nhập lần đầu.</div>
+        </div>
+        ` : ''}
       </form>
     `,
     footHtml: `<button class="btn btn-primary btn-block" id="save">${isEdit ? 'Lưu' : 'Thêm khách hàng'}</button>`,
@@ -204,6 +210,7 @@ function openCustomerForm(customer) {
         const fd = new FormData(form);
         const res = await S.upsertCustomer({
           cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), address: fd.get('address'),
+          password: fd.get('password'),
         });
         closeFn();
         if (res.isNew) {
@@ -349,7 +356,6 @@ function openContractView(customerId, contract, { readOnly = false } = {}) {
       <div class="field-hint ${d < 0 ? 'text-danger' : ''}" style="margin-top:6px">
         ${d < 0 ? `${icon('alert', 'icon-sm')} Đã quá hạn ${Math.abs(d)} ngày` : `Còn ${d} ngày đến hạn thanh toán`}
       </div>` : ''}
-      <div class="field-hint" style="margin-top:10px">Dữ liệu hợp đồng lấy từ file Excel — cập nhật bằng cách nhập lại file mới nhất, hệ thống tự khớp theo Số HĐTD.</div>
     `,
     footHtml: readOnly ? '' : `<button class="btn btn-danger-outline btn-block" id="del-contract">${icon('trash', 'icon-sm')} Xóa hợp đồng</button>`,
     onMount(sheet, closeFn) {

@@ -2,20 +2,23 @@ import { icon } from '../icons.js';
 import { openModal } from './modal.js';
 
 export const CUSTOMER_NAV = [
-  { path: '#/', label: 'Trang chủ', icon: 'landmark' },
-  { path: '#/yeu-cau-tu-van', label: 'Yêu cầu tư vấn', icon: 'clipboard' },
-  { path: '#/tai-khoan', label: 'Tài khoản', icon: 'idCard' },
+  { path: '#/', label: 'Trang chủ', shortLabel: 'Trang chủ', icon: 'landmark' },
+  { path: '#/yeu-cau-tu-van', label: 'Yêu cầu tư vấn', shortLabel: 'Yêu cầu', icon: 'clipboard' },
+  { path: '#/tai-khoan', label: 'Tài khoản', shortLabel: 'Tài khoản', icon: 'idCard' },
 ];
 
 export const ADMIN_NAV = [
-  { path: '#/admin', label: 'Tổng quan', icon: 'chart' },
-  { path: '#/admin/khach-hang', label: 'Khách hàng & Hợp đồng', icon: 'users' },
-  { path: '#/admin/yeu-cau', label: 'Yêu cầu tư vấn', icon: 'clipboard' },
+  { path: '#/admin', label: 'Tổng quan', shortLabel: 'Tổng quan', icon: 'chart' },
+  { path: '#/admin/khach-hang', label: 'Khách hàng & Hợp đồng', shortLabel: 'Khách hàng', icon: 'users' },
+  { path: '#/admin/yeu-cau', label: 'Yêu cầu tư vấn', shortLabel: 'Yêu cầu', icon: 'clipboard' },
 ];
 export const ADMIN_NAV_SUPER_ONLY = [
-  { path: '#/admin/nhan-vien', label: 'Quản lý User', icon: 'idCard' },
-  { path: '#/admin/cai-dat', label: 'Cài đặt', icon: 'settings' },
+  { path: '#/admin/nhan-vien', label: 'Quản lý User', shortLabel: 'User', icon: 'idCard' },
+  { path: '#/admin/cai-dat', label: 'Cài đặt', shortLabel: 'Cài đặt', icon: 'settings' },
 ];
+// Số mục tối đa hiện trực tiếp trên thanh menu dưới (mobile) — còn lại gộp vào "Thêm"
+// để không bị lệch/chồng chữ khi có nhiều mục (đặc biệt tài khoản quản trị toàn quyền).
+const BOTTOM_NAV_MAX_DIRECT = 3;
 
 function matchPath(navPath, current) {
   if (navPath === '#/') return current === '#/' || current === '' || current === '#';
@@ -58,9 +61,38 @@ function renderSidebarNav(nav) {
 
 function renderBottomNav(nav) {
   const el = document.getElementById('bottom-nav');
-  el.innerHTML = nav.map((item) => `<a href="${item.path}" data-path="${item.path}">${icon(item.icon)}<span>${item.label}</span></a>`).join('')
-    + `<button class="more-btn" id="btn-logout-bottom">${icon('logout')}<span>Đăng xuất</span></button>`;
-  document.getElementById('btn-logout-bottom').addEventListener('click', onLogoutClick);
+  const direct = nav.slice(0, BOTTOM_NAV_MAX_DIRECT);
+  const overflow = nav.slice(BOTTOM_NAV_MAX_DIRECT);
+  // Còn dư mục thì gộp vào "Thêm" (kèm Đăng xuất); vừa đủ 1 hàng thì Đăng xuất hiện thẳng luôn.
+  el.innerHTML = direct.map((item) => `<a href="${item.path}" data-path="${item.path}">${icon(item.icon)}<span>${item.shortLabel || item.label}</span></a>`).join('')
+    + (overflow.length
+      ? `<button class="more-btn" id="btn-more-bottom">${icon('more')}<span>Thêm</span></button>`
+      : `<button class="more-btn" id="btn-logout-bottom">${icon('logout')}<span>Đăng xuất</span></button>`);
+  const moreBtn = document.getElementById('btn-more-bottom');
+  if (moreBtn) moreBtn.addEventListener('click', () => openMoreSheet(overflow));
+  const logoutBtn = document.getElementById('btn-logout-bottom');
+  if (logoutBtn) logoutBtn.addEventListener('click', onLogoutClick);
+}
+
+/** Bảng "Thêm" — gộp các mục menu còn lại (nếu có) + Đăng xuất, tránh nhồi quá nhiều mục vào 1 hàng menu. */
+function openMoreSheet(overflowItems) {
+  openModal({
+    title: 'Thêm',
+    bodyHtml: `
+      <div class="flex-col gap-6">
+        ${overflowItems.map((item) => `
+          <a href="${item.path}" data-path="${item.path}" class="list-row" style="cursor:pointer;text-decoration:none;color:inherit">
+            <div class="row-thumb" style="background:var(--surface-alt);color:var(--text)">${icon(item.icon, 'icon-sm')}</div>
+            <div class="row-main"><div class="row-title">${item.label}</div></div>
+          </a>`).join('')}
+      </div>
+    `,
+    footHtml: `<button class="btn btn-outline btn-block" id="sheet-logout">${icon('logout', 'icon-sm')} Đăng xuất</button>`,
+    onMount(sheet, closeFn) {
+      sheet.querySelectorAll('a[data-path]').forEach((a) => a.addEventListener('click', closeFn));
+      sheet.querySelector('#sheet-logout').addEventListener('click', () => { closeFn(); onLogoutClick(); });
+    },
+  });
 }
 
 function onLogoutClick() {
