@@ -388,13 +388,17 @@ export function openContractView(customerId, contract, { readOnly = false } = {}
   const accrued = S.accruedInterest(contract);
   const canPay = S.effectiveContractStatus(contract) !== 'da_tat_toan';
 
-  // Mã QR VietQR cho quản trị viên/nhân viên — số tiền lấy đúng "Lãi đến nay"
-  // (không phải dư nợ gốc) vì mục đích chính là gửi nhanh cho khách hàng để
-  // họ tự chuyển lãi, giống nội dung nút "Nhắn SMS báo lãi" ở trên.
+  // Mã QR VietQR cho quản trị viên/nhân viên — 2 ô Gốc/Lãi riêng, cộng lại ra
+  // số tiền trên QR. Mặc định chỉ có sẵn Lãi (= "Lãi đến nay", giống nội dung
+  // nút "Nhắn SMS báo lãi" ở trên), ô Gốc để trống, cần thì tự gõ vào (VD:
+  // khách trả gộp cả gốc lẫn lãi, hoặc trả 1 phần gốc).
   const org = S.getOrg();
   const hasBank = canPay && org.bankBin && org.bankAccountNo;
-  const qrText = customer ? `${stripDiacritics(customer.name)} THANH TOAN LAI HDTD ${contract.code}` : '';
-  const qrUrl = hasBank ? buildVietQrUrl({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: accrued, content: qrText, accountName: org.bankAccountName }) : '';
+  function buildQrContent(goc, lai) {
+    const loai = goc > 0 && lai > 0 ? 'GOC LAI' : goc > 0 ? 'GOC' : 'LAI';
+    return customer ? `${stripDiacritics(customer.name)} THANH TOAN ${loai} HDTD ${contract.code}` : '';
+  }
+  const qrUrl = hasBank ? buildVietQrUrl({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: accrued, content: buildQrContent(0, accrued), accountName: org.bankAccountName }) : '';
 
   const close = openModal({
     title: `Hợp đồng ${contract.code}`,
@@ -423,9 +427,9 @@ export function openContractView(customerId, contract, { readOnly = false } = {}
         ${d < 0 ? `${icon('alert', 'icon-sm')} Đã quá hạn ${Math.abs(d)} ngày` : `Còn ${d} ngày đến hạn thanh toán`}
       </div>` : ''}
       ${hasBank ? `
-      <div class="field" style="padding-top:8px;border-top:1px dashed var(--border);margin-top:10px">
-        <label class="fw-700">Mã QR thu lãi — Số tiền</label>
-        <input type="text" inputmode="numeric" id="qr-amount-input"/>
+      <div class="grid-2" style="padding-top:8px;border-top:1px dashed var(--border);margin-top:10px">
+        <div class="field"><label>Gốc</label><input type="text" inputmode="numeric" id="qr-goc-input" placeholder="0"/></div>
+        <div class="field"><label>Lãi</label><input type="text" inputmode="numeric" id="qr-lai-input"/></div>
       </div>
       <div class="grid-2 mb-8">
         <button type="button" class="btn btn-outline btn-block" id="btn-download-qr-ct">${icon('download', 'icon-sm')} Tải ảnh mã QR</button>
@@ -439,17 +443,21 @@ export function openContractView(customerId, contract, { readOnly = false } = {}
     footHtml: readOnly ? '' : `<button class="btn btn-danger-outline btn-block" id="del-contract">${icon('trash', 'icon-sm')} Xóa hợp đồng</button>`,
     onMount(sheet, closeFn) {
       const qrImgEl = sheet.querySelector('#qr-img-ct');
-      /** Đổi số tiền là vẽ lại ảnh QR ngay — mặc định lấy Lãi đến nay, quản trị viên gõ số khác để thay thế (VD: khách trả gộp cả gốc lẫn lãi, hoặc trả 1 phần). */
-      function refreshQr(amount) {
+      let gocAmount = 0;
+      let laiAmount = accrued;
+      /** Sửa ô Gốc hoặc Lãi là vẽ lại ảnh QR ngay theo tổng 2 ô cộng lại. */
+      function refreshQr() {
         if (!qrImgEl) return;
-        qrImgEl.src = buildVietQrUrl({ bin: org.bankBin, accountNo: org.bankAccountNo, amount, content: qrText, accountName: org.bankAccountName });
+        qrImgEl.src = buildVietQrUrl({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: gocAmount + laiAmount, content: buildQrContent(gocAmount, laiAmount), accountName: org.bankAccountName });
       }
-      const amountInput = sheet.querySelector('#qr-amount-input');
-      if (amountInput) bindMoneyInput(amountInput, accrued, (v) => refreshQr(v));
+      const gocInput = sheet.querySelector('#qr-goc-input');
+      if (gocInput) bindMoneyInput(gocInput, 0, (v) => { gocAmount = v; refreshQr(); });
+      const laiInput = sheet.querySelector('#qr-lai-input');
+      if (laiInput) bindMoneyInput(laiInput, accrued, (v) => { laiAmount = v; refreshQr(); });
       const downloadQrBtn = sheet.querySelector('#btn-download-qr-ct');
-      if (downloadQrBtn) downloadQrBtn.addEventListener('click', () => downloadQrImage(qrImgEl.src, `qr-lai-${contract.code}.png`));
+      if (downloadQrBtn) downloadQrBtn.addEventListener('click', () => downloadQrImage(qrImgEl.src, `qr-thanh-toan-${contract.code}.png`));
       const shareQrBtn = sheet.querySelector('#btn-share-qr-ct');
-      if (shareQrBtn) shareQrBtn.addEventListener('click', () => shareQrImage(qrImgEl.src, qrText));
+      if (shareQrBtn) shareQrBtn.addEventListener('click', () => shareQrImage(qrImgEl.src, buildQrContent(gocAmount, laiAmount)));
       const delBtn = sheet.querySelector('#del-contract');
       if (delBtn) delBtn.addEventListener('click', () => {
         confirmDialog({
