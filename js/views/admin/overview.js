@@ -5,8 +5,6 @@ import { emptyState, statusBadge } from '../../components/ui.js';
 import { formatVND, formatNumber, formatDate, daysUntil } from '../../utils.js';
 import { openContractView } from './customers.js';
 
-const NEAR_DUE_DAYS = 15;
-
 export function renderHeader(headerEl) {
   headerEl.innerHTML = pageHeader({ title: 'Tổng quan quản trị' });
 }
@@ -20,8 +18,8 @@ export function render(contentEl) {
   const contracts = S.getState().contracts.filter((c) => !isStaff || customerIds.has(c.customerId));
   const requests = S.listRequests({}).filter((r) => !isStaff || customerIds.has(r.customerId));
   const totalOutstanding = contracts.filter((c) => S.effectiveContractStatus(c) !== 'da_tat_toan').reduce((s, c) => s + c.balance, 0);
-  const overdue = contracts.filter((c) => S.effectiveContractStatus(c) === 'qua_han');
-  const nearDue = contracts.filter((c) => S.effectiveContractStatus(c) === 'dang_vay' && daysUntil(c.dueDate) >= 0 && daysUntil(c.dueDate) <= NEAR_DUE_DAYS);
+  const overdue = contracts.filter((c) => S.contractUrgency(c) === 'qua_han');
+  const nearDue = contracts.filter((c) => S.contractUrgency(c) === 'gan_den_han');
   const newRequests = requests.filter((r) => r.status === 'moi');
 
   const pad2 = (n) => String(n).padStart(2, '0');

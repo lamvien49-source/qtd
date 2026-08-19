@@ -1,7 +1,7 @@
 import * as S from '../../state.js';
 import { icon } from '../../icons.js';
 import { pageHeader } from '../../components/shell.js';
-import { emptyState, statusBadge, openPicker, pillSelectHtml } from '../../components/ui.js';
+import { emptyState, statusBadge, openPicker, pillSelectHtml, openResetPasswordModal } from '../../components/ui.js';
 import { openModal, confirmDialog } from '../../components/modal.js';
 import { toast } from '../../components/toast.js';
 import { formatVND, formatDate, daysUntil, maskCccd, colorFor, initials, debounce } from '../../utils.js';
@@ -23,7 +23,7 @@ const SORT_LABEL = Object.fromEntries(SORT_OPTIONS.map((o) => [o.value, o.label]
 let query = '';
 let filterThon = []; // rỗng = Tất cả — có thể tích chọn nhiều Thôn cùng lúc
 let filterXom = [];  // rỗng = Tất cả — có thể tích chọn nhiều Xóm cùng lúc
-let onlyOverdue = false;
+let urgencyFilter = 'all'; // 'all' | 'qua_han' | 'gan_den_han'
 let sortMode = 'default';
 
 function multiPillLabel(prefix, values) {
@@ -51,8 +51,9 @@ export function render(contentEl, filterEl) {
         ${pillSelectHtml('pill-sort', 'Sắp xếp: Mặc định')}
       </div>
       <div class="chip-row mb-8">
-        <button class="chip ${!onlyOverdue ? 'active' : ''}" data-overdue="0">Tất cả</button>
-        <button class="chip ${onlyOverdue ? 'active' : ''}" data-overdue="1">${icon('alert', 'icon-sm')} Có nợ quá hạn</button>
+        <button class="chip ${urgencyFilter === 'all' ? 'active' : ''}" data-urgency="all">Tất cả</button>
+        <button class="chip ${urgencyFilter === 'qua_han' ? 'active' : ''}" data-urgency="qua_han">${icon('alert', 'icon-sm')} Nợ quá hạn</button>
+        <button class="chip ${urgencyFilter === 'gan_den_han' ? 'active' : ''}" data-urgency="gan_den_han">Gần đến hạn</button>
       </div>
       ${!isStaff ? `
       <div class="flex gap-8 mb-8">
@@ -66,8 +67,8 @@ export function render(contentEl, filterEl) {
     filterEl.querySelector('#btn-import').addEventListener('click', openImportModal);
     filterEl.querySelector('#btn-add').addEventListener('click', () => openCustomerForm());
   }
-  filterEl.querySelectorAll('[data-overdue]').forEach((chip) => {
-    chip.addEventListener('click', () => { onlyOverdue = chip.dataset.overdue === '1'; render(contentEl, filterEl); });
+  filterEl.querySelectorAll('[data-urgency]').forEach((chip) => {
+    chip.addEventListener('click', () => { urgencyFilter = chip.dataset.urgency; render(contentEl, filterEl); });
   });
 
   function bindPickers() {
@@ -126,23 +127,25 @@ export function render(contentEl, filterEl) {
       const totalInterest = contracts.reduce((s, ct) => s + S.accruedInterest(ct), 0);
       return { c, contracts, totalBalance, totalInterest };
     });
-    if (onlyOverdue) enriched = enriched.filter((e) => e.contracts.some((ct) => S.effectiveContractStatus(ct) === 'qua_han'));
+    if (urgencyFilter !== 'all') enriched = enriched.filter((e) => e.contracts.some((ct) => S.contractUrgency(ct) === urgencyFilter));
     if (sortMode !== 'default') {
       const [field, dir] = sortMode.split('-');
       const key = field === 'principal' ? 'totalBalance' : 'totalInterest';
       enriched.sort((a, b) => (dir === 'asc' ? a[key] - b[key] : b[key] - a[key]));
     }
+    const totalContracts = enriched.reduce((s, e) => s + e.contracts.length, 0);
 
     contentEl.innerHTML = `
-      <div class="text-sm text-muted mb-8">${enriched.length} khách hàng</div>
+      <div class="text-sm text-muted mb-8">${enriched.length} khách hàng · ${totalContracts} hợp đồng</div>
       ${enriched.length ? enriched.map(({ c, contracts }) => {
-        const hasOverdue = contracts.some((ct) => S.effectiveContractStatus(ct) === 'qua_han');
+        const hasOverdue = contracts.some((ct) => S.contractUrgency(ct) === 'qua_han');
+        const hasNearDue = !hasOverdue && contracts.some((ct) => S.contractUrgency(ct) === 'gan_den_han');
         return `
         <div class="card card-pad mb-8">
           <div class="flex items-center gap-6 mb-8" style="flex-wrap:wrap">
             <span style="font-size:15px;font-weight:700">${c.name}</span>
             ${hasOverdue ? `<span class="badge badge-red">Quá hạn</span>` : ''}
-            ${c.mustChangePassword ? `<span class="badge badge-yellow">Chưa đổi MK</span>` : ''}
+            ${hasNearDue ? `<span class="badge badge-yellow">Gần đến hạn</span>` : ''}
           </div>
           <div class="list-row" data-id="${c.id}" style="cursor:pointer;padding:0">
             <div class="row-thumb" style="background:${colorFor(c.id)}">${initials(c.name)}</div>
@@ -179,28 +182,29 @@ function openCustomerForm(customer) {
   const isEdit = !!customer;
   const close = openModal({
     title: isEdit ? 'Sửa khách hàng' : 'Tạo tài khoản khách hàng',
-    bodyHtml: `
+    bodyHtml: isEdit ? `
       <form id="cf">
-        <div class="field"><label>Số CCCD</label><input name="cccd" required pattern="\\d{9,12}" value="${customer ? customer.cccd : ''}" ${isEdit ? 'readonly' : ''}/></div>
-        <div class="field"><label>Họ tên</label><input name="name" ${isEdit ? 'required' : ''} value="${customer ? esc(customer.name) : ''}"/></div>
+        <div class="field"><label>Số CCCD</label><input name="cccd" required pattern="\\d{9,12}" value="${customer.cccd}" readonly/></div>
+        <div class="field"><label>Họ tên</label><input name="name" required value="${esc(customer.name)}"/></div>
         <div class="field">
           <label>Số điện thoại</label>
-          <input name="phone" value="${customer ? esc(customer.phone) : ''}"/>
+          <input name="phone" value="${esc(customer.phone)}"/>
           <div class="field-hint">Khách hàng đăng nhập được bằng CCCD hoặc số điện thoại này — nên nhập cả 2 để khách dùng số nào cũng tra được đúng hợp đồng.</div>
         </div>
-        ${isEdit ? `
         <div class="field">
           <label>Địa chỉ</label>
           <input name="address" value="${esc(customer.address)}" placeholder="VD: Xóm 01, thôn Bình Nguyên, xã Bình Sơn, tỉnh Quảng Ngãi"/>
           <div class="field-hint">Hệ thống tự tách Xóm/Thôn/Tỉnh theo dấu phẩy để lọc & phân quyền, không cần nhập riêng từng ô.</div>
         </div>
-        ` : `
+      </form>
+    ` : `
+      <form id="cf">
+        <div class="field"><label>Số CCCD</label><input name="cccd" required pattern="\\d{9,12}"/></div>
         <div class="field">
           <label>Mật khẩu đăng nhập</label>
           <input name="password" placeholder="Để trống sẽ tự sinh mật khẩu"/>
-          <div class="field-hint">Để trống thì hệ thống tự sinh mật khẩu ngẫu nhiên, hiện ra sau khi lưu để gửi cho khách. Nếu CCCD này đã có sẵn hợp đồng (nhập từ Excel), tài khoản mới sẽ tự thấy ngay các hợp đồng đó — không cần nhập lại địa chỉ (địa chỉ lấy từ Excel).</div>
+          <div class="field-hint">Để trống thì hệ thống tự sinh mật khẩu ngẫu nhiên, hiện ra sau khi lưu để gửi cho khách. Không cần nhập họ tên/SĐT/địa chỉ — nhập file Excel có CCCD này thì tài khoản sẽ tự động đồng bộ lấy đúng thông tin, tự thấy ngay các hợp đồng khớp CCCD.</div>
         </div>
-        `}
       </form>
     `,
     footHtml: `<button class="btn btn-primary btn-block" id="save">${isEdit ? 'Lưu' : 'Tạo tài khoản'}</button>`,
@@ -218,13 +222,15 @@ function openCustomerForm(customer) {
           window.__qtdRedrawCustomers && window.__qtdRedrawCustomers();
           return;
         }
-        const res = await S.activateCustomerAccount({
-          cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), password: fd.get('password'),
-        });
-        closeFn();
-        toast('Đã tạo tài khoản khách hàng', 'success');
-        showCredential(res.customer, res.tempPassword);
-        window.__qtdRedrawCustomers && window.__qtdRedrawCustomers();
+        try {
+          const res = await S.activateCustomerAccount({ cccd: fd.get('cccd'), password: fd.get('password') });
+          closeFn();
+          toast('Đã tạo tài khoản khách hàng', 'success');
+          showCredential(res.customer, res.tempPassword);
+          window.__qtdRedrawCustomers && window.__qtdRedrawCustomers();
+        } catch (err) {
+          toast(err.message || 'Có lỗi xảy ra', 'error');
+        }
       });
     },
   });
@@ -246,7 +252,14 @@ function showCredential(customer, tempPassword) {
   });
 }
 
-export function openCustomerDetail(customerId, { readOnly = false } = {}) {
+/**
+ * context 'customer' (mặc định, mở từ trang Khách hàng & Hợp đồng): nút xóa
+ * là "Xóa khách hàng" — xóa cả hồ sơ lẫn hợp đồng.
+ * context 'use' (mở từ trang Quản lý User): nút xóa là "Xóa Use" — chỉ gỡ
+ * tài khoản đăng nhập, KHÔNG đụng đến hồ sơ/hợp đồng vì 2 thứ này độc lập
+ * với nhau (hợp đồng vẫn còn nguyên trong Khách hàng & Hợp đồng sau khi xóa).
+ */
+export function openCustomerDetail(customerId, { readOnly = false, context = 'customer' } = {}) {
   const c = S.getCustomer(customerId);
   const contracts = S.listContractsByCustomer(customerId);
   const close = openModal({
@@ -260,10 +273,10 @@ export function openCustomerDetail(customerId, { readOnly = false } = {}) {
       <div class="field-hint">Khách chưa đăng nhập lần nào (hoặc đã đăng nhập nhưng chưa đổi mật khẩu) nên vẫn xem được mật khẩu này để đưa cho khách.</div>
       ` : !readOnly ? `<div class="field-hint">Khách đã tự đổi mật khẩu — không thể xem lại, dùng nút "Cấp lại mật khẩu" nếu cần đặt mật khẩu mới.</div>` : ''}
       ${!readOnly ? `
-      <div class="flex gap-8 mt-16 mb-16">
+      <div class="flex gap-8 mt-16 mb-16" style="flex-wrap:wrap">
         <button class="btn btn-outline btn-sm" id="btn-reset-pw">${icon('key', 'icon-sm')} Cấp lại mật khẩu</button>
-        <button class="btn btn-outline btn-sm" id="btn-edit-cust">${icon('edit', 'icon-sm')} Sửa</button>
-        <button class="btn btn-danger-outline btn-sm" id="btn-del-cust">${icon('trash', 'icon-sm')}</button>
+        ${context === 'customer' ? `<button class="btn btn-outline btn-sm" id="btn-edit-cust">${icon('edit', 'icon-sm')} Sửa</button>` : ''}
+        <button class="btn btn-danger-outline btn-sm" id="btn-del-cust">${icon('trash', 'icon-sm')} ${context === 'use' ? 'Xóa Use' : ''}</button>
       </div>` : '<div class="mt-16"></div>'}
       <div class="section-head"><h2 style="font-size:14px">Hợp đồng (${contracts.length})</h2></div>
       <div id="contract-list">${contracts.map((ct) => contractRowCompact(ct)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng — nhập từ Excel để thêm.</p>'}</div>
@@ -273,12 +286,26 @@ export function openCustomerDetail(customerId, { readOnly = false } = {}) {
         btn.addEventListener('click', () => { closeFn(); openContractView(customerId, S.getContract(btn.dataset.viewContract), { readOnly }); });
       });
       if (readOnly) return;
-      sheet.querySelector('#btn-reset-pw').addEventListener('click', async () => {
-        const temp = await S.adminResetCustomerPassword(customerId);
-        showCredential(c, temp);
+      sheet.querySelector('#btn-reset-pw').addEventListener('click', () => {
+        openResetPasswordModal({
+          title: 'Cấp lại mật khẩu cho khách',
+          onConfirm: async (val) => {
+            const temp = await S.adminResetCustomerPassword(customerId, val);
+            showCredential(c, temp);
+          },
+        });
       });
-      sheet.querySelector('#btn-edit-cust').addEventListener('click', () => { closeFn(); openCustomerForm(c); });
+      const editBtn = sheet.querySelector('#btn-edit-cust');
+      if (editBtn) editBtn.addEventListener('click', () => { closeFn(); openCustomerForm(c); });
       sheet.querySelector('#btn-del-cust').addEventListener('click', () => {
+        if (context === 'use') {
+          confirmDialog({
+            title: 'Xóa Use?', message: `Gỡ tài khoản đăng nhập của "${c.name}"? Hồ sơ và hợp đồng vẫn được giữ nguyên bên Khách hàng & Hợp đồng — có thể "Tạo User" lại bất cứ lúc nào.`,
+            confirmLabel: 'Xóa Use', danger: true,
+            onConfirm: () => { S.deactivateCustomerAccount(customerId); closeFn(); toast('Đã xóa Use (hồ sơ/hợp đồng vẫn còn)', 'success'); },
+          });
+          return;
+        }
         confirmDialog({
           title: 'Xóa khách hàng?', message: `Xóa "${c.name}" và toàn bộ hợp đồng liên quan?`,
           confirmLabel: 'Xóa', danger: true,
@@ -306,7 +333,9 @@ function contractAmountsHtml(ct) {
 
 /** Dòng hợp đồng gọn — chỉ mã + trạng thái + gốc/lãi, bấm vào mới ra đầy đủ chi tiết (openContractView). */
 function contractRowCompact(ct) {
-  const status = S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(ct)];
+  // "Đang vay" thay bằng "Gần đến hạn" khi sắp tới ngày đến hạn, để dễ chú ý hơn ở dòng hợp đồng gọn.
+  const urgency = S.contractUrgency(ct);
+  const status = urgency === 'gan_den_han' ? { badge: 'badge-yellow', label: 'Gần đến hạn' } : S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(ct)];
   return `
     <div class="list-row" data-view-contract="${ct.id}" data-customer-id="${ct.customerId}" style="cursor:pointer;padding:8px 0">
       <div class="row-main">
@@ -335,7 +364,7 @@ export function openContractView(customerId, contract, { readOnly = false } = {}
   const status = S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(contract)];
   const d = daysUntil(contract.dueDate);
   const interestPaidUntil = contract.interestPaidUntil || contract.disbursedDate;
-  const interestDays = Math.max(0, -daysUntil(interestPaidUntil));
+  const interestDays = S.interestDaysAccrued(contract);
   const accrued = S.accruedInterest(contract);
   const canPay = S.effectiveContractStatus(contract) !== 'da_tat_toan';
 
@@ -391,7 +420,7 @@ function openImportModal() {
         Chọn đúng file Excel sổ theo dõi vay bạn đang dùng (<b>.xls</b> hoặc <b>.xlsx</b>) — có các cột theo đúng thứ tự sau (dòng đầu là tiêu đề sẽ tự bỏ qua):<br/>
         <b>${REQUIRED_COLUMNS}</b>
       </p>
-      <p class="text-sm text-muted mb-8">Cột nào thiếu dữ liệu ở 1 dòng vẫn nhập được — hệ thống tự tính/tự sinh (mã hợp đồng, ngày đến hạn...). <b class="text-danger">Tải file lên = danh sách hợp đồng đầy đủ hiện tại</b>: hợp đồng nào đang có trong hệ thống mà không còn trong file này sẽ tự động bị xóa để luôn khớp đúng file mới nhất. Nhập từ Excel <b>không tạo tài khoản đăng nhập</b> — chỉ cập nhật hợp đồng; tạo tài khoản riêng ở nút "Tạo User"/"Tạo tài khoản khách hàng".</p>
+      <p class="text-sm text-muted mb-8">Cột nào thiếu dữ liệu ở 1 dòng vẫn nhập được — hệ thống tự tính/tự sinh (mã hợp đồng, ngày đến hạn...). <b class="text-danger">Tải file lên = danh sách hợp đồng đầy đủ hiện tại</b>: hợp đồng nào đang có trong hệ thống mà không còn trong file này sẽ tự động bị xóa để luôn khớp đúng file mới nhất (khách hết hợp đồng và chưa có tài khoản Use sẽ dọn hồ sơ luôn). Khách hàng <b>hoàn toàn mới</b> (CCCD chưa từng có) sẽ được <b>tự động cấp tài khoản Use</b> (mật khẩu tự sinh, hiện ra sau khi nhập). Khách <b>đã có sẵn</b> hồ sơ/tài khoản thì Excel <b>không đụng gì</b> đến tên/SĐT/địa chỉ/tài khoản của họ — chỉ cập nhật hợp đồng.</p>
       <div class="field">
         <input type="file" id="file-input" accept=".xls,.xlsx"/>
         <div class="field-hint">Đọc trực tiếp trong trình duyệt, hỗ trợ cả file .xls (Excel 97-2003) lẫn .xlsx — không cần chuyển đổi định dạng trước, không cần thư viện ngoài.</div>
@@ -412,9 +441,13 @@ function openImportModal() {
           const res = await S.importFromPastedTable(tsvText, { fullSync });
           resultEl.innerHTML = `
             <div class="card card-pad mt-16" style="background:var(--surface-alt)">
-              <div class="text-sm mb-8">✅ ${res.newProfiles} khách hàng mới · ${res.updatedProfiles} khách đã cập nhật · ${res.contracts} hợp đồng</div>
+              <div class="text-sm mb-8">✅ ${res.newProfiles} khách hàng mới · ${res.existingCustomers} khách đã có sẵn (giữ nguyên) · ${res.contracts} hợp đồng</div>
               ${res.deletedContracts ? `<div class="text-sm mb-8" style="color:var(--warning)">${icon('alert', 'icon-sm')} Đã xóa ${res.deletedContracts} hợp đồng không còn trong file này</div>` : ''}
-              <div class="field-hint">Khách hàng mới nhập từ đây chưa có tài khoản đăng nhập — vào "Tạo User" để cấp tài khoản khi cần.</div>
+              ${res.deletedCustomers ? `<div class="text-sm mb-8" style="color:var(--warning)">${icon('alert', 'icon-sm')} Đã dọn ${res.deletedCustomers} hồ sơ không còn hợp đồng nào (chưa có tài khoản Use)</div>` : ''}
+              ${res.newAccounts.length ? `
+                <div class="fw-700 text-sm mb-6">Tài khoản Use mới tự tạo (gửi cho khách hàng):</div>
+                ${res.newAccounts.map((a) => `<div class="oc-line"><span>${a.name} (${a.cccd})</span><b>${a.tempPassword}</b></div>`).join('')}
+              ` : ''}
               ${res.errors.length ? `<div class="text-sm text-danger mt-8">${res.errors.slice(0, 5).join('<br/>')}</div>` : ''}
             </div>
           `;

@@ -54,7 +54,7 @@ function matchRoute(path, routes) {
 
 function clearFabs() { document.querySelectorAll('.fab').forEach((el) => el.remove()); }
 
-function renderApp() {
+function renderApp({ scrollTop = true } = {}) {
   const session = S.getSession();
 
   if (!session) {
@@ -96,7 +96,7 @@ function renderApp() {
   const contentEl = document.getElementById('app-content');
   clearFabs();
   filterEl.innerHTML = '';
-  window.scrollTo(0, 0);
+  if (scrollTop) window.scrollTo(0, 0);
 
   if (match.view.renderHeader) match.view.renderHeader(headerEl, match.params);
   match.view.render(contentEl, filterEl, match.params, query);
@@ -112,6 +112,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   renderApp();
 });
 
+// Mọi thay đổi dữ liệu (xóa/tạo/sửa...) đều gọi notify() và kích hoạt render
+// lại ở đây — nhưng đây KHÔNG phải là chuyển trang, nên không cuộn lên đầu,
+// để thao tác xong người dùng vẫn đang đứng đúng chỗ vừa thao tác.
 S.subscribe(() => {
-  if (root) renderApp();
+  if (root) renderApp({ scrollTop: false });
 });

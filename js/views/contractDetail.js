@@ -18,7 +18,7 @@ export function render(contentEl, filterEl, params) {
   const status = S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(contract)];
   const d = daysUntil(contract.dueDate);
   const interestPaidUntil = contract.interestPaidUntil || contract.disbursedDate;
-  const interestDays = Math.max(0, -daysUntil(interestPaidUntil));
+  const interestDays = S.interestDaysAccrued(contract);
   const accrued = S.accruedInterest(contract);
   const canPay = S.effectiveContractStatus(contract) !== 'da_tat_toan';
 

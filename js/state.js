@@ -28,6 +28,7 @@ export const CONTRACT_STATUS_MAP = Object.fromEntries(CONTRACT_STATUS.map((s) =>
 
 const LOCK_AFTER_FAILS = 5;
 const LOCK_MINUTES = 15;
+export const NEAR_DUE_DAYS = 15;
 
 let state = null;
 const listeners = new Set();
@@ -177,14 +178,36 @@ export function effectiveContractStatus(contract, asOf = new Date()) {
   return 'dang_vay';
 }
 
+/** 'qua_han' | 'gan_den_han' | null — mức cần chú ý của 1 hợp đồng, dùng để gắn badge/lọc. */
+export function contractUrgency(contract, asOf = new Date()) {
+  const status = effectiveContractStatus(contract, asOf);
+  if (status === 'qua_han') return 'qua_han';
+  if (status === 'dang_vay') {
+    const d = daysBetween(asOf, new Date(contract.dueDate));
+    if (d >= 0 && d <= NEAR_DUE_DAYS) return 'gan_den_han';
+  }
+  return null;
+}
+
+/**
+ * Số ngày tính lãi — lãi đã thu ĐẾN HẾT ngày "Thu lãi đến ngày" nên ngày tiếp
+ * theo (thu lãi đến ngày + 1) mới là ngày bắt đầu tính lãi mới, không tính
+ * trùng lại ngày đã thu. (VD: giải ngân 18/08, thu lãi đến ngày 19/08 thì
+ * lãi mới tính bắt đầu từ 20/08.)
+ */
+export function interestDaysAccrued(contract, asOf = new Date()) {
+  const paidUntil = contract.interestPaidUntil || contract.disbursedDate;
+  const from = addDays(new Date(paidUntil), 1);
+  return Math.max(0, daysBetween(from, asOf));
+}
 /**
  * Lãi phát sinh từ ngày đã trả lãi đến ngày hiện tại.
- * Công thức: Số dư × số ngày × lãi suất năm / 365
+ * Công thức: Số dư × số ngày × lãi suất năm / 365, làm tròn đến đồng gần nhất
+ * (Math.round — tự làm tròn lên hoặc xuống tùy phần lẻ >= hay < 0,5).
  */
 export function accruedInterest(contract, asOf = new Date()) {
   if (effectiveContractStatus(contract, asOf) === 'da_tat_toan') return 0;
-  const from = contract.interestPaidUntil || contract.disbursedDate;
-  const days = Math.max(0, daysBetween(new Date(from), asOf));
+  const days = interestDaysAccrued(contract, asOf);
   return Math.round(contract.balance * days * (contract.interestRate / 100) / 365);
 }
 
@@ -231,8 +254,9 @@ export async function setCustomerPassword(customerId, newPassword, opts = {}) {
   notify();
 }
 
-export async function adminResetCustomerPassword(customerId) {
-  const temp = genTempPassword();
+/** Admin cấp lại mật khẩu cho khách — có thể tự nhập mật khẩu cụ thể, để trống thì tự sinh ngẫu nhiên. */
+export async function adminResetCustomerPassword(customerId, customPassword) {
+  const temp = customPassword && customPassword.trim() ? customPassword.trim() : genTempPassword();
   await setCustomerPassword(customerId, temp, { mustChangePassword: true });
   return temp;
 }
@@ -277,10 +301,11 @@ export function upsertCustomerProfile({ cccd, name, phone, address }) {
 export async function activateCustomerAccount({ cccd, name, phone, password }) {
   const cccdTrim = String(cccd || '').trim();
   if (!cccdTrim) throw new Error('Cần nhập số CCCD');
+  let c = findCustomerByCccd(cccdTrim);
+  if (c && c.salt && c.hash) throw new Error('Số CCCD này đã có tài khoản Use rồi — dùng "Cấp lại mật khẩu" nếu cần đặt lại.');
   const phoneClean = phone ? String(phone).replace(/\s/g, '') : '';
   const finalPassword = password && password.trim() ? password.trim() : genTempPassword();
   const cred = await makeCredential(finalPassword);
-  let c = findCustomerByCccd(cccdTrim);
   if (c) {
     if (name) c.name = name;
     if (phoneClean) c.phone = phoneClean;
@@ -295,6 +320,20 @@ export async function activateCustomerAccount({ cccd, name, phone, password }) {
   Object.assign(c, cred, { mustChangePassword: true, tempPassword: finalPassword, failedAttempts: 0, lockedUntil: null });
   notify();
   return { customer: c, tempPassword: finalPassword };
+}
+
+/**
+ * "Xóa Use" — chỉ gỡ TÀI KHOẢN ĐĂNG NHẬP (mật khẩu/salt/hash), KHÔNG đụng gì
+ * đến hồ sơ khách hàng hay hợp đồng — 2 thứ đó độc lập với tài khoản đăng
+ * nhập. Khách trở lại trạng thái "chỉ có hồ sơ" như mới nhập từ Excel, admin
+ * có thể "Tạo User" lại bất cứ lúc nào mà không mất dữ liệu hợp đồng.
+ */
+export function deactivateCustomerAccount(customerId) {
+  const c = getCustomer(customerId);
+  if (!c) return;
+  c.salt = null; c.hash = null; c.mustChangePassword = false; c.tempPassword = null;
+  c.failedAttempts = 0; c.lockedUntil = null;
+  notify();
 }
 
 /** Danh sách các Thôn / Xóm đang có trong dữ liệu khách hàng (dùng để lọc & gán quyền). */
@@ -345,6 +384,7 @@ export function deleteCustomer(id) {
 }
 export function deleteContract(id) {
   state.contracts = state.contracts.filter((c) => c.id !== id);
+  pruneEmptyCustomerProfiles(); // hết hợp đồng mà chưa có tài khoản Use thì dọn luôn hồ sơ
   notify();
 }
 
@@ -384,18 +424,32 @@ export function parseVNDate(str) {
   return Number.isNaN(dt.getTime()) ? '' : dt.toISOString().slice(0, 10);
 }
 
+/** Dọn hồ sơ khách hàng không còn hợp đồng nào VÀ chưa có tài khoản Use — Use thì luôn giữ lại dù hết hợp đồng (2 thứ độc lập với nhau). */
+function pruneEmptyCustomerProfiles() {
+  const customersWithContracts = new Set(state.contracts.map((ct) => ct.customerId));
+  const before = state.customers.length;
+  state.customers = state.customers.filter((c) => customersWithContracts.has(c.id) || (c.salt && c.hash));
+  return before - state.customers.length;
+}
+
 const HEADER_HINTS = ['cccd', 'cmnd', 'người nhận nợ', 'nguoi nhan no', 'họ tên', 'ho ten', 'số hđtd', 'so hdtd'];
 /**
- * Nhập dữ liệu hợp đồng từ Excel/dữ liệu dán — chỉ tạo/cập nhật HỒ SƠ khách
- * hàng (không cấp tài khoản đăng nhập, xem upsertCustomerProfile). Khi
- * `fullSync` bật (dùng cho tải file Excel) — coi file là danh sách ĐẦY ĐỦ
+ * Nhập dữ liệu hợp đồng từ Excel/dữ liệu dán.
+ * - CCCD CHƯA từng có trong hệ thống -> tạo hồ sơ mới VÀ tự cấp luôn tài
+ *   khoản Use (mật khẩu tự sinh ngẫu nhiên, trả về trong result.newAccounts
+ *   để hiện cho admin gửi khách).
+ * - CCCD ĐÃ có sẵn (dù chỉ là hồ sơ hay đã có tài khoản Use) -> KHÔNG đụng
+ *   gì đến tên/SĐT/địa chỉ/tài khoản của họ, chỉ cập nhật hợp đồng.
+ * Khi `fullSync` bật (dùng cho tải file Excel) — coi file là danh sách ĐẦY ĐỦ
  * hiện tại: hợp đồng nào đang có trong hệ thống mà KHÔNG xuất hiện trong
  * lần nhập này sẽ bị XÓA, để danh sách hợp đồng luôn khớp đúng file mới
- * nhất. Không bật với kiểu dán tay (chỉ thêm/cập nhật, không xóa gì).
+ * nhất; khách hàng nào sau đó không còn hợp đồng nào và cũng chưa có tài
+ * khoản Use thì dọn luôn hồ sơ (xem pruneEmptyCustomerProfiles). Không bật
+ * fullSync với kiểu dán tay (chỉ thêm/cập nhật, không xóa/dọn gì).
  */
 export async function importFromPastedTable(text, { fullSync = false } = {}) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const result = { newProfiles: 0, updatedProfiles: 0, contracts: 0, deletedContracts: 0, skipped: 0, errors: [] };
+  const result = { newProfiles: 0, newAccounts: [], existingCustomers: 0, contracts: 0, deletedContracts: 0, deletedCustomers: 0, skipped: 0, errors: [] };
   const touchedContractIds = new Set();
   for (const line of lines) {
     const cells = line.includes('\t') ? line.split('\t') : line.split(',');
@@ -407,8 +461,18 @@ export async function importFromPastedTable(text, { fullSync = false } = {}) {
     const cccd = (cccdRaw || '').replace(/\s/g, '');
     if (!cccd || !/^\d{9,12}$/.test(cccd)) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
 
-    const { customer, isNew } = upsertCustomerProfile({ cccd, name, phone, address });
-    if (isNew) result.newProfiles++; else result.updatedProfiles++;
+    let customer = findCustomerByCccd(cccd);
+    if (customer) {
+      result.existingCustomers++; // đã có hồ sơ/tài khoản -> giữ nguyên, không sửa gì
+    } else {
+      const { customer: created } = upsertCustomerProfile({ cccd, name, phone, address });
+      customer = created;
+      result.newProfiles++;
+      const temp = genTempPassword();
+      const cred = await makeCredential(temp);
+      Object.assign(customer, cred, { mustChangePassword: true, tempPassword: temp, failedAttempts: 0, lockedUntil: null });
+      result.newAccounts.push({ name: customer.name, cccd: customer.cccd, tempPassword: temp });
+    }
 
     const disbursed = parseVNDate(disbursedDate) || new Date().toISOString().slice(0, 10);
     const ct = upsertContract({
@@ -426,6 +490,7 @@ export async function importFromPastedTable(text, { fullSync = false } = {}) {
     const before = state.contracts.length;
     state.contracts = state.contracts.filter((ct) => touchedContractIds.has(ct.id));
     result.deletedContracts = before - state.contracts.length;
+    result.deletedCustomers = pruneEmptyCustomerProfiles();
     notify();
   }
   return result;
@@ -476,10 +541,11 @@ export function updateStaffPermissions(id, allowedThon, allowedXom) {
   a.allowedXom = Array.isArray(allowedXom) ? allowedXom : [];
   notify();
 }
-export async function resetStaffPassword(id) {
+/** Cấp lại mật khẩu cho quản trị viên/nhân viên — có thể tự nhập mật khẩu cụ thể, để trống thì tự sinh ngẫu nhiên. */
+export async function resetStaffPassword(id, customPassword) {
   const a = getAdmin(id);
   if (!a) throw new Error('Không tìm thấy tài khoản');
-  const temp = genTempPassword();
+  const temp = customPassword && customPassword.trim() ? customPassword.trim() : genTempPassword();
   const cred = await makeCredential(temp);
   a.salt = cred.salt;
   a.hash = cred.hash;

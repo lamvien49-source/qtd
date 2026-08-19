@@ -5,7 +5,7 @@
 import * as S from '../../state.js';
 import { icon } from '../../icons.js';
 import { pageHeader } from '../../components/shell.js';
-import { emptyState } from '../../components/ui.js';
+import { emptyState, openResetPasswordModal } from '../../components/ui.js';
 import { openModal, confirmDialog } from '../../components/modal.js';
 import { toast } from '../../components/toast.js';
 import { initials, colorFor, maskCccd, formatNumber, debounce } from '../../utils.js';
@@ -34,7 +34,10 @@ function permissionSummary(a) {
 }
 
 function draw(contentEl) {
-  const customers = S.getState().customers;
+  // "Use" ở trang này chỉ tính khách hàng ĐÃ có tài khoản đăng nhập (salt+hash) —
+  // hồ sơ nhập từ Excel chưa được "Tạo User" thuộc về trang Khách hàng & Hợp
+  // đồng, không phải Use, để 2 khái niệm không lẫn vào nhau.
+  const customers = S.getState().customers.filter((c) => c.salt && c.hash);
   const admins = S.listAdmins();
   const lockedCount = customers.filter((c) => S.isCustomerLocked(c)).length;
   const tree = S.thonXomTree();
@@ -85,7 +88,7 @@ function draw(contentEl) {
   });
   contentEl.querySelector('#btn-add-user').addEventListener('click', () => openCreateUserModal(tree, contentEl));
   contentEl.querySelectorAll('[data-open-use]').forEach((row) => {
-    row.addEventListener('click', () => openCustomerDetail(row.dataset.openUse, { readOnly: false }));
+    row.addEventListener('click', () => openCustomerDetail(row.dataset.openUse, { readOnly: false, context: 'use' }));
   });
   contentEl.querySelectorAll('[data-open-admin]').forEach((row) => {
     row.addEventListener('click', () => openAdminDetail(S.getAdmin(row.dataset.openAdmin), tree, contentEl));
@@ -134,7 +137,12 @@ function showCredential(title, username, password) {
 /** Cây chọn quyền 2 cấp: tích cả Thôn = xem trọn Thôn đó; tích riêng từng Xóm (dạng chip) = chỉ xem Xóm đó dù Thôn không được cấp trọn. */
 function permissionTreeHtml(tree, admin) {
   if (!tree.length) return `<p class="text-sm text-muted">Chưa có dữ liệu Thôn/Xóm nào trong danh sách khách hàng.</p>`;
-  return `<div class="flex-col gap-10">${tree.map(({ thon, xomList }) => `
+  return `
+    <div class="flex gap-8 mb-8">
+      <button type="button" class="btn btn-outline btn-sm" data-perm-select-all>Chọn tất cả</button>
+      <button type="button" class="btn btn-outline btn-sm" data-perm-clear-all>Bỏ chọn tất cả</button>
+    </div>
+    <div class="flex-col gap-10">${tree.map(({ thon, xomList }) => `
     <div class="card card-pad" style="background:var(--surface-alt)">
       <label class="flex items-center gap-8" style="font-size:14px;font-weight:700;cursor:pointer">
         <input type="checkbox" name="thon" value="${thon}" ${admin?.allowedThon.includes(thon) ? 'checked' : ''}/>
@@ -153,6 +161,20 @@ function permissionTreeHtml(tree, admin) {
 function bindPermissionTreeChips(sheet) {
   sheet.querySelectorAll('.xom-chip input[name="xom"]').forEach((cb) => {
     cb.addEventListener('change', () => cb.closest('label').classList.toggle('active', cb.checked));
+  });
+  const selectAllBtn = sheet.querySelector('[data-perm-select-all]');
+  const clearAllBtn = sheet.querySelector('[data-perm-clear-all]');
+  if (selectAllBtn) selectAllBtn.addEventListener('click', () => {
+    sheet.querySelectorAll('input[name="thon"], input[name="xom"]').forEach((cb) => {
+      cb.checked = true;
+      if (cb.name === 'xom') cb.closest('label').classList.add('active');
+    });
+  });
+  if (clearAllBtn) clearAllBtn.addEventListener('click', () => {
+    sheet.querySelectorAll('input[name="thon"], input[name="xom"]').forEach((cb) => {
+      cb.checked = false;
+      if (cb.name === 'xom') cb.closest('label').classList.remove('active');
+    });
   });
 }
 
@@ -184,10 +206,15 @@ function openAdminDetail(admin, tree, contentEl) {
         closeFn();
         draw(contentEl);
       });
-      sheet.querySelector('#btn-reset-pw').addEventListener('click', async () => {
-        const temp = await S.resetStaffPassword(admin.id);
-        closeFn();
-        showCredential('Đã cấp lại mật khẩu', admin.username, temp);
+      sheet.querySelector('#btn-reset-pw').addEventListener('click', () => {
+        openResetPasswordModal({
+          title: 'Cấp lại mật khẩu',
+          onConfirm: async (val) => {
+            const temp = await S.resetStaffPassword(admin.id, val);
+            closeFn();
+            showCredential('Đã cấp lại mật khẩu', admin.username, temp);
+          },
+        });
       });
       const delBtn = sheet.querySelector('#btn-del-admin');
       if (delBtn) delBtn.addEventListener('click', () => {
@@ -229,18 +256,12 @@ function openCreateUserModal(tree, contentEl) {
           ${kind === 'use' ? `
           <form id="use-form">
             <div class="field"><label>Số CCCD</label><input name="cccd" required pattern="\\d{9,12}"/></div>
-            <div class="field"><label>Họ tên</label><input name="name" required/></div>
-            <div class="field">
-              <label>Số điện thoại</label>
-              <input name="phone"/>
-              <div class="field-hint">User đăng nhập được bằng CCCD hoặc SĐT này — nên nhập cả 2.</div>
-            </div>
             <div class="field">
               <label>Mật khẩu đăng nhập</label>
               <input name="password" placeholder="Để trống sẽ tự sinh mật khẩu"/>
               <div class="field-hint">Đây là mật khẩu để User đăng nhập lần đầu — có thể tự đặt hoặc để trống cho hệ thống tự sinh, hiện ra sau khi lưu để gửi cho khách.</div>
             </div>
-            <div class="field-hint mb-8">Sau khi tạo, User đăng nhập được ngay và tự động thấy các hợp đồng khớp CCCD (nhập từ Excel) — không cần nhập lại địa chỉ.</div>
+            <div class="field-hint mb-8">Không cần nhập họ tên/SĐT/địa chỉ — nhập file Excel có CCCD này thì User sẽ tự động đồng bộ lấy đúng thông tin, tự thấy ngay hợp đồng khớp CCCD.</div>
           </form>
           ` : `
           <form id="admin-form">
@@ -278,11 +299,15 @@ function openCreateUserModal(tree, contentEl) {
           const form = sheet.querySelector('#use-form');
           if (!form.reportValidity()) return;
           const fd = new FormData(form);
-          const res = await S.activateCustomerAccount({ cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), password: fd.get('password') });
-          closeFn();
-          toast('Đã tạo User mới', 'success');
-          showCredential('Đã tạo User', res.customer.cccd, res.tempPassword);
-          draw(contentEl);
+          try {
+            const res = await S.activateCustomerAccount({ cccd: fd.get('cccd'), password: fd.get('password') });
+            closeFn();
+            toast('Đã tạo User mới', 'success');
+            showCredential('Đã tạo User', res.customer.cccd, res.tempPassword);
+            draw(contentEl);
+          } catch (err) {
+            toast(err.message || 'Có lỗi xảy ra', 'error');
+          }
         } else {
           const form = sheet.querySelector('#admin-form');
           if (!form.reportValidity()) return;
