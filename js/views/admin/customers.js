@@ -4,8 +4,9 @@ import { pageHeader } from '../../components/shell.js';
 import { emptyState, statusBadge, openPicker, pillSelectHtml, openResetPasswordModal } from '../../components/ui.js';
 import { openModal, confirmDialog } from '../../components/modal.js';
 import { toast } from '../../components/toast.js';
-import { formatVND, formatDate, daysUntil, maskCccd, colorFor, initials, debounce } from '../../utils.js';
+import { formatVND, formatDate, daysUntil, maskCccd, colorFor, initials, debounce, stripDiacritics } from '../../utils.js';
 import { readExcelFirstSheet, rowsToTsv } from '../../lib/excelLite.js';
+import { buildVietQrUrl, downloadQrImage, shareQrImage } from '../contractDetail.js';
 
 export function renderHeader(headerEl) {
   headerEl.innerHTML = pageHeader({ title: 'Khách hàng & Hợp đồng' });
@@ -387,6 +388,14 @@ export function openContractView(customerId, contract, { readOnly = false } = {}
   const accrued = S.accruedInterest(contract);
   const canPay = S.effectiveContractStatus(contract) !== 'da_tat_toan';
 
+  // Mã QR VietQR cho quản trị viên/nhân viên — số tiền lấy đúng "Lãi đến nay"
+  // (không phải dư nợ gốc) vì mục đích chính là gửi nhanh cho khách hàng để
+  // họ tự chuyển lãi, giống nội dung nút "Nhắn SMS báo lãi" ở trên.
+  const org = S.getOrg();
+  const hasBank = canPay && org.bankBin && org.bankAccountNo;
+  const qrText = customer ? `${stripDiacritics(customer.name)} THANH TOAN LAI HDTD ${contract.code}` : '';
+  const qrUrl = hasBank ? buildVietQrUrl({ bin: org.bankBin, accountNo: org.bankAccountNo, amount: accrued, content: qrText, accountName: org.bankAccountName }) : '';
+
   const close = openModal({
     title: `Hợp đồng ${contract.code}`,
     bodyHtml: `
@@ -413,9 +422,25 @@ export function openContractView(customerId, contract, { readOnly = false } = {}
       <div class="field-hint ${d < 0 ? 'text-danger' : ''}" style="margin-top:6px">
         ${d < 0 ? `${icon('alert', 'icon-sm')} Đã quá hạn ${Math.abs(d)} ngày` : `Còn ${d} ngày đến hạn thanh toán`}
       </div>` : ''}
+      ${hasBank ? `
+      <div class="oc-line" style="padding-top:8px;border-top:1px dashed var(--border);margin-top:10px">
+        <span class="fw-700">Mã QR thu lãi</span>
+        <b style="color:var(--color-primary)">${formatVND(accrued)}</b>
+      </div>
+      <div style="text-align:center;margin-top:8px">
+        <button type="button" class="btn btn-outline btn-block mb-8" id="btn-download-qr-ct">${icon('download', 'icon-sm')} Tải ảnh mã QR</button>
+        <img id="qr-img-ct" src="${qrUrl}" alt="Mã QR chuyển khoản" style="max-width:200px;width:100%;border:1px solid var(--border);border-radius:12px"/>
+        <div class="field-hint mt-8 mb-12">Số tiền lấy đúng "Lãi đến nay" ở trên. Đưa khách quét trực tiếp bằng camera app ngân hàng, hoặc dùng nút bên dưới để gửi ảnh QR cho khách tự chuyển.</div>
+        <button type="button" class="btn btn-outline btn-block" id="btn-share-qr-ct">${icon('wallet', 'icon-sm')} Chia sẻ ảnh QR</button>
+      </div>
+      ` : ''}
     `,
     footHtml: readOnly ? '' : `<button class="btn btn-danger-outline btn-block" id="del-contract">${icon('trash', 'icon-sm')} Xóa hợp đồng</button>`,
     onMount(sheet, closeFn) {
+      const downloadQrBtn = sheet.querySelector('#btn-download-qr-ct');
+      if (downloadQrBtn) downloadQrBtn.addEventListener('click', () => downloadQrImage(qrUrl, `qr-lai-${contract.code}.png`));
+      const shareQrBtn = sheet.querySelector('#btn-share-qr-ct');
+      if (shareQrBtn) shareQrBtn.addEventListener('click', () => shareQrImage(qrUrl, qrText));
       const delBtn = sheet.querySelector('#del-contract');
       if (delBtn) delBtn.addEventListener('click', () => {
         confirmDialog({
