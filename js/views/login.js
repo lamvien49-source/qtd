@@ -22,11 +22,11 @@ export function renderLogin(root, onLoggedIn) {
         <form id="login-form">
           <div class="field" id="field-primary">
             <label id="label-primary">Số CCCD hoặc SĐT</label>
-            <input name="primary" id="input-primary" required inputmode="numeric" placeholder="Nhập số CCCD hoặc SĐT của bạn"/>
+            <input name="primary" id="input-primary" required inputmode="numeric" autocomplete="username" placeholder="Nhập số CCCD hoặc SĐT của bạn"/>
           </div>
           <div class="field">
             <label>Mật khẩu</label>
-            <input name="password" type="password" required placeholder="Nhập mật khẩu"/>
+            <input name="password" type="password" required autocomplete="current-password" placeholder="Nhập mật khẩu"/>
           </div>
           <div class="field-error" id="login-error" style="display:none;margin-bottom:10px"></div>
           <button class="btn btn-primary btn-block" type="submit">${icon('lock', 'icon-sm')} Đăng nhập</button>

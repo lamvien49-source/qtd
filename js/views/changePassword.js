@@ -15,11 +15,11 @@ export function renderChangePassword(root, customerId, onDone, opts = {}) {
         <form id="pw-form">
           <div class="field">
             <label>Mật khẩu mới</label>
-            <input name="pw1" type="password" required minlength="6" placeholder="Tối thiểu 6 ký tự"/>
+            <input name="pw1" type="password" required minlength="6" autocomplete="new-password" placeholder="Tối thiểu 6 ký tự"/>
           </div>
           <div class="field">
             <label>Nhập lại mật khẩu mới</label>
-            <input name="pw2" type="password" required minlength="6"/>
+            <input name="pw2" type="password" required minlength="6" autocomplete="new-password"/>
           </div>
           <div class="field-error" id="pw-error" style="display:none;margin-bottom:10px"></div>
           <button class="btn btn-primary btn-block" type="submit">${icon('check', 'icon-sm')} Xác nhận</button>

@@ -20,7 +20,7 @@ export const REQUEST_STATUS = [
 export const REQUEST_STATUS_MAP = Object.fromEntries(REQUEST_STATUS.map((s) => [s.id, s]));
 
 export const CONTRACT_STATUS = [
-  { id: 'dang_vay', label: 'Đang vay', badge: 'badge-blue' },
+  { id: 'dang_vay', label: 'Trong hạn', badge: 'badge-blue' },
   { id: 'qua_han', label: 'Quá hạn', badge: 'badge-red' },
   { id: 'da_tat_toan', label: 'Đã tất toán', badge: 'badge-green' },
 ];
@@ -170,7 +170,7 @@ export function customerOutstandingTotal(customerId) {
  * theo thời gian). Coi là:
  * - "Đã tất toán" nếu dư nợ ≤ 0.
  * - "Quá hạn" nếu còn dư nợ và đã qua ngày đến hạn.
- * - "Đang vay" các trường hợp còn lại.
+ * - "Trong hạn" (id nội bộ vẫn là 'dang_vay') các trường hợp còn lại.
  */
 export function effectiveContractStatus(contract, asOf = new Date()) {
   if ((contract.balance || 0) <= 0) return 'da_tat_toan';

@@ -17,15 +17,15 @@ export function render(contentEl) {
       <form id="self-pw-form">
         <div class="field">
           <label>Mật khẩu hiện tại</label>
-          <input name="pwOld" type="password" required/>
+          <input name="pwOld" type="password" required autocomplete="current-password"/>
         </div>
         <div class="field">
           <label>Mật khẩu mới</label>
-          <input name="pw1" type="password" required minlength="6" placeholder="Tối thiểu 6 ký tự"/>
+          <input name="pw1" type="password" required minlength="6" autocomplete="new-password" placeholder="Tối thiểu 6 ký tự"/>
         </div>
         <div class="field">
           <label>Nhập lại mật khẩu mới</label>
-          <input name="pw2" type="password" required minlength="6"/>
+          <input name="pw2" type="password" required minlength="6" autocomplete="new-password"/>
         </div>
         <div class="field-error" id="self-pw-error" style="display:none;margin-bottom:10px"></div>
         <button class="btn btn-primary btn-block" type="submit">Xác nhận đổi mật khẩu</button>

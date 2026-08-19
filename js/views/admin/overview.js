@@ -17,6 +17,12 @@ export function render(contentEl) {
   const customerIds = new Set(customers.map((c) => c.id));
   const contracts = S.getState().contracts.filter((c) => !isStaff || customerIds.has(c.customerId));
   const requests = S.listRequests({}).filter((r) => !isStaff || customerIds.has(r.customerId));
+  // "Tổng khách hàng" chỉ tính khách còn dư nợ > 0 — khớp đúng với số khách
+  // hàng thực sự hiện ra ở trang Khách hàng & Hợp đồng (trang đó cũng ẩn
+  // khách hết dư nợ), để 2 nơi luôn đồng bộ với nhau.
+  const balanceByCustomer = new Map();
+  for (const ct of contracts) balanceByCustomer.set(ct.customerId, (balanceByCustomer.get(ct.customerId) || 0) + (ct.balance || 0));
+  const activeCustomerCount = customers.filter((c) => (balanceByCustomer.get(c.id) || 0) > 0).length;
   const totalOutstanding = contracts.filter((c) => S.effectiveContractStatus(c) !== 'da_tat_toan').reduce((s, c) => s + c.balance, 0);
   const overdue = contracts.filter((c) => S.contractUrgency(c) === 'qua_han');
   const nearDue = contracts.filter((c) => S.contractUrgency(c) === 'gan_den_han');
@@ -25,7 +31,7 @@ export function render(contentEl) {
 
   contentEl.innerHTML = `
     <div class="grid-4 mb-16">
-      <div class="stat-tile c-blue"><div class="stat-label">Tổng khách hàng</div><div class="stat-value">${formatNumber(customers.length)}</div></div>
+      <div class="stat-tile c-blue"><div class="stat-label">Tổng khách hàng</div><div class="stat-value">${formatNumber(activeCustomerCount)}</div></div>
       <div class="stat-tile c-green"><div class="stat-label">Tổng dư nợ</div><div class="stat-value" style="font-size:15px">${formatVND(totalOutstanding)}</div></div>
       <div class="stat-tile c-pink" id="tile-overdue" style="cursor:pointer">
         <div class="stat-label">Hợp đồng quá hạn</div>
@@ -90,11 +96,13 @@ function openContractListModal(title, contracts, isStaff, colorVar) {
         </div>`;
       }).join('') : emptyState({ iconName: 'checkCircle', title: 'Không có hợp đồng nào', message: 'Danh sách hiện đang trống.' })}
     `,
-    onMount(sheet, closeFn) {
+    onMount(sheet) {
+      // Mở chi tiết hợp đồng CHỒNG lên trên (không đóng danh sách này trước)
+      // — đóng chi tiết hợp đồng lại là quay về đúng danh sách đang xem, đỡ
+      // phải mở lại "Xem tất cả" từ đầu mỗi lần muốn xem hợp đồng khác.
       sheet.querySelectorAll('[data-view-ct]').forEach((row) => {
         row.addEventListener('click', () => {
           const ct = S.getContract(row.dataset.viewCt);
-          closeFn();
           openContractView(ct.customerId, ct, { readOnly: isStaff });
         });
       });

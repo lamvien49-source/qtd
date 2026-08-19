@@ -298,8 +298,11 @@ export function openCustomerDetail(customerId, { readOnly = false, context = 'cu
       <div id="contract-list">${contracts.map((ct) => contractRowCompact(ct)).join('') || '<p class="text-sm text-muted">Chưa có hợp đồng — nhập từ Excel để thêm.</p>'}</div>
     `,
     onMount(sheet, closeFn) {
+      // Mở chi tiết hợp đồng CHỒNG lên trên (không đóng màn khách hàng này
+      // trước) — đóng chi tiết hợp đồng lại là quay ngay về đúng màn khách
+      // hàng đang xem, không phải mở lại từ danh sách ngoài cùng.
       sheet.querySelectorAll('[data-view-contract]').forEach((btn) => {
-        btn.addEventListener('click', () => { closeFn(); openContractView(customerId, S.getContract(btn.dataset.viewContract), { readOnly }); });
+        btn.addEventListener('click', () => { openContractView(customerId, S.getContract(btn.dataset.viewContract), { readOnly }); });
       });
       if (readOnly) return;
       sheet.querySelector('#btn-reset-pw').addEventListener('click', () => {
@@ -349,7 +352,7 @@ function contractAmountsHtml(ct) {
 
 /** Dòng hợp đồng gọn — chỉ mã + trạng thái + gốc/lãi, bấm vào mới ra đầy đủ chi tiết (openContractView). */
 function contractRowCompact(ct) {
-  // "Đang vay" thay bằng "Gần đến hạn" khi sắp tới ngày đến hạn, để dễ chú ý hơn ở dòng hợp đồng gọn.
+  // "Trong hạn" thay bằng "Gần đến hạn" khi sắp tới ngày đến hạn, để dễ chú ý hơn ở dòng hợp đồng gọn.
   const urgency = S.contractUrgency(ct);
   const status = urgency === 'gan_den_han' ? { badge: 'badge-yellow', label: 'Gần đến hạn' } : S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(ct)];
   return `
