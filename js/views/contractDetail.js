@@ -179,8 +179,8 @@ function openPaymentModal(contract, customer, accrued) {
           </div>
           ${hasBank ? `
             <div style="text-align:center">
-              <button type="button" class="btn btn-primary btn-block mb-8" id="btn-share-qr">${icon('wallet', 'icon-sm')} Mở app để thanh toán</button>
-              <div class="field-hint mt-8 mb-12">Bấm vào sẽ hiện bảng <b>"Mở bằng"</b> của điện thoại (giống khi bấm gọi điện) để chọn app ngân hàng/ví đang cài, gửi thẳng ảnh QR sang đó. <b>Lưu ý:</b> hầu hết app ngân hàng chưa tự mở đúng màn chuyển khoản kèm sẵn số tiền/nội dung chỉ từ ảnh nhận được — vào app xong bấm "Quét QR từ ảnh" (nếu có) hoặc quét trực tiếp bằng camera ở mã QR bên dưới là cách chắc chắn nhất.</div>
+              <button type="button" class="btn btn-primary btn-block mb-8" id="btn-share-qr">${icon('wallet', 'icon-sm')} Gửi ảnh QR sang app ngân hàng</button>
+              <div class="field-hint mt-8 mb-12">Bấm vào sẽ hiện bảng <b>"Mở bằng"</b> của điện thoại (giống khi bấm gọi điện) để chọn app ngân hàng/ví đang cài — nhưng đây chỉ là <b>gửi ảnh QR sang app đó</b>, không tự mở màn chuyển khoản. Vào app xong bạn cần tự bấm "Quét QR từ ảnh" (nếu app có) hoặc quét trực tiếp bằng camera ở mã QR bên dưới — quét trực tiếp là cách chắc chắn hoạt động nhất.</div>
               <img id="qr-img" alt="Mã QR chuyển khoản" style="max-width:220px;width:100%;border:1px solid var(--border);border-radius:12px"/>
               <div class="field-hint mt-8 mb-12">Hoặc quét trực tiếp mã QR trên bằng camera trong app ngân hàng/ví điện tử bất kỳ hỗ trợ VietQR — cách chắc chắn hoạt động nhất, số tiền &amp; nội dung tự điền sẵn.</div>
               <button type="button" class="btn btn-outline btn-block" id="btn-download-qr">${icon('download', 'icon-sm')} Tải ảnh mã QR</button>
