@@ -474,7 +474,6 @@ svg { display: block; }
   .app-header { padding: 0 24px; }
   .fab { right: 32px; bottom: 32px; }
   .grid-4.dash-stats { grid-template-columns: repeat(4, 1fr); }
-  .dash-two-col { display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; align-items: start; }
 }
 @media (max-width: 899px) {
   .grid-4 { grid-template-columns: 1fr 1fr; }

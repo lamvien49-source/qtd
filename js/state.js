@@ -351,13 +351,30 @@ export function deactivateCustomerAccount(customerId) {
 }
 
 /** Danh sách các Thôn / Xóm đang có trong dữ liệu khách hàng (dùng để lọc & gán quyền). */
+/**
+ * So sánh tên Xóm kiểu "tự nhiên" theo số — Xóm thường đặt tên bằng số (có
+ * khi kèm số phụ dạng "8/1", "8/2"): sắp đúng thứ tự 01, 02, 03, 08, 8/1,
+ * 8/2, 09, 10... thay vì so chuỗi kiểu chữ cái (sẽ ra "01, 09, 10, 8/1..."
+ * sai thứ tự vì "1" < "8" < "9" theo ký tự).
+ */
+function naturalXomCompare(a, b) {
+  const parse = (s) => {
+    const m = String(s).match(/(\d+)(?:\s*\/\s*(\d+))?/);
+    return m ? [parseInt(m[1], 10), m[2] ? parseInt(m[2], 10) : 0] : [Infinity, 0];
+  };
+  const [aMajor, aMinor] = parse(a);
+  const [bMajor, bMinor] = parse(b);
+  if (aMajor !== bMajor) return aMajor - bMajor;
+  if (aMinor !== bMinor) return aMinor - bMinor;
+  return String(a).localeCompare(String(b), 'vi');
+}
 export function distinctThon() {
-  return [...new Set(state.customers.map((c) => c.thon).filter(Boolean))].sort();
+  return [...new Set(state.customers.map((c) => c.thon).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'vi'));
 }
 export function distinctXom(thon) {
   const thonList = [].concat(thon || []).filter(Boolean);
   const list = thonList.length ? state.customers.filter((c) => thonList.includes(c.thon)) : state.customers;
-  return [...new Set(list.map((c) => c.xom).filter(Boolean))].sort();
+  return [...new Set(list.map((c) => c.xom).filter(Boolean))].sort(naturalXomCompare);
 }
 /** Cây Thôn -> danh sách Xóm trong thôn đó — dùng cho phân quyền nhân viên theo từng cấp. */
 export function thonXomTree() {

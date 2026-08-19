@@ -149,14 +149,19 @@ export function render(contentEl, filterEl) {
     contentEl.innerHTML = `
       <div class="text-sm text-muted mb-8">${enriched.length} khách hàng · ${totalContracts} hợp đồng</div>
       ${enriched.length ? enriched.map(({ c, contracts }) => {
-        const hasOverdue = contracts.some((ct) => S.contractUrgency(ct) === 'qua_han');
-        const hasNearDue = !hasOverdue && contracts.some((ct) => S.contractUrgency(ct) === 'gan_den_han');
+        const overdueContracts = contracts.filter((ct) => S.contractUrgency(ct) === 'qua_han');
+        const nearDueContracts = contracts.filter((ct) => S.contractUrgency(ct) === 'gan_den_han');
+        const hasOverdue = overdueContracts.length > 0;
+        const hasNearDue = !hasOverdue && nearDueContracts.length > 0;
+        // Hợp đồng quá hạn/gần đến hạn NHIỀU ngày nhất (đáng chú ý nhất) — hiện kèm số ngày cho dễ nhìn ngay từ danh sách.
+        const mostOverdueDays = hasOverdue ? Math.max(...overdueContracts.map((ct) => Math.abs(daysUntil(ct.dueDate)))) : 0;
+        const mostNearDueDays = hasNearDue ? Math.min(...nearDueContracts.map((ct) => daysUntil(ct.dueDate))) : 0;
         return `
         <div class="card card-pad mb-8">
           <div class="flex items-center gap-6 mb-8" style="flex-wrap:wrap">
             <span style="font-size:15px;font-weight:700">${c.name}</span>
-            ${hasOverdue ? `<span class="badge badge-red">Quá hạn</span>` : ''}
-            ${hasNearDue ? `<span class="badge badge-yellow">Gần đến hạn</span>` : ''}
+            ${hasOverdue ? `<span class="badge badge-red">Quá hạn ${mostOverdueDays} ngày</span>` : ''}
+            ${hasNearDue ? `<span class="badge badge-yellow">Gần đến hạn ${mostNearDueDays} ngày</span>` : ''}
           </div>
           <div class="list-row" data-id="${c.id}" style="cursor:pointer;padding:0">
             <div class="row-thumb" style="background:${colorFor(c.id)}">${initials(c.name)}</div>
@@ -450,33 +455,28 @@ function openImportModal() {
       const fileInput = sheet.querySelector('#file-input');
       const uploadBtn = sheet.querySelector('#btn-upload-file');
 
-      const runImport = async (tsvText, fullSync, btn, busyLabel) => {
+      // Chỉ lo việc nhập + hiện kết quả + thông báo — KHÔNG đụng vào trạng
+      // thái nút bấm (nút "Tải lên" và nút "Nhập từ dữ liệu đã dán" tự quản
+      // lý trạng thái bận/xong của riêng mình bên dưới, vì mỗi nút có 1 giai
+      // đoạn chờ trước đó khác nhau — trộn chung dễ bị kẹt ở chữ "Đang..." mãi).
+      const runImport = async (tsvText, fullSync) => {
         if (!tsvText.trim()) { toast('Không có dữ liệu để nhập', 'error'); return; }
-        const originalHtml = btn.innerHTML;
-        btn.disabled = true;
-        btn.textContent = busyLabel;
-        try {
-          const res = await S.importFromPastedTable(tsvText, { fullSync });
-          resultEl.innerHTML = `
-            <div class="card card-pad mt-16" style="background:var(--surface-alt)">
-              <div class="text-sm mb-8">✅ ${res.newProfiles} khách hàng mới · ${res.existingCustomers} khách đã có sẵn (giữ nguyên) · ${res.contracts} hợp đồng</div>
-              ${res.deletedContracts ? `<div class="text-sm mb-8" style="color:var(--warning)">${icon('alert', 'icon-sm')} Đã xóa ${res.deletedContracts} hợp đồng không còn trong file này</div>` : ''}
-              ${res.deletedCustomers ? `<div class="text-sm mb-8" style="color:var(--warning)">${icon('alert', 'icon-sm')} Đã dọn ${res.deletedCustomers} hồ sơ không còn hợp đồng nào (chưa có tài khoản Use)</div>` : ''}
-              ${res.newAccounts.length ? `
-                <div class="fw-700 text-sm mb-6">Tài khoản Use mới tự tạo (gửi cho khách hàng):</div>
-                ${res.newAccounts.map((a) => `<div class="oc-line"><span>${a.name} (${a.cccd})</span><b>${a.tempPassword}</b></div>`).join('')}
-              ` : ''}
-              ${res.errors.length ? `<div class="text-sm text-danger mt-8">${res.errors.slice(0, 5).join('<br/>')}</div>` : ''}
-            </div>
-          `;
-          toast('Đã nhập dữ liệu', 'success');
-          window.__qtdRedrawCustomers?.();
-        } catch (err) {
-          toast(err.message || 'Có lỗi khi nhập dữ liệu', 'error');
-        } finally {
-          btn.disabled = false;
-          btn.innerHTML = originalHtml;
-        }
+        const res = await S.importFromPastedTable(tsvText, { fullSync });
+        resultEl.innerHTML = `
+          <div class="card card-pad mt-16" style="background:var(--surface-alt)">
+            <div class="text-sm mb-8">✅ Đã nhập xong — ${res.newProfiles} khách hàng mới · ${res.existingCustomers} khách đã có sẵn (giữ nguyên) · ${res.contracts} hợp đồng</div>
+            ${res.deletedContracts ? `<div class="text-sm mb-8" style="color:var(--warning)">${icon('alert', 'icon-sm')} Đã xóa ${res.deletedContracts} hợp đồng không còn trong file này</div>` : ''}
+            ${res.deletedCustomers ? `<div class="text-sm mb-8" style="color:var(--warning)">${icon('alert', 'icon-sm')} Đã dọn ${res.deletedCustomers} hồ sơ không còn hợp đồng nào (chưa có tài khoản Use)</div>` : ''}
+            ${res.newAccounts.length ? `
+              <div class="fw-700 text-sm mb-6">Tài khoản Use mới tự tạo (gửi cho khách hàng):</div>
+              ${res.newAccounts.map((a) => `<div class="oc-line"><span>${a.name} (${a.cccd})</span><b>${a.tempPassword}</b></div>`).join('')}
+            ` : ''}
+            ${res.errors.length ? `<div class="text-sm text-danger mt-8">${res.errors.slice(0, 5).join('<br/>')}</div>` : ''}
+          </div>
+        `;
+        resultEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        toast('Đã nhập dữ liệu xong', 'success');
+        window.__qtdRedrawCustomers?.();
       };
 
       // Chọn file xong chỉ hiện tên file + bật nút "Tải lên" — bấm nút mới
@@ -484,23 +484,45 @@ function openImportModal() {
       fileInput.addEventListener('change', () => {
         uploadBtn.disabled = !fileInput.files[0];
       });
+      const uploadBtnIdleHtml = uploadBtn.innerHTML;
       uploadBtn.addEventListener('click', async () => {
         const file = fileInput.files[0];
         if (!file) return;
-        const originalHtml = uploadBtn.innerHTML;
         uploadBtn.disabled = true;
         uploadBtn.textContent = 'Đang đọc file...';
+        let rows;
         try {
-          const rows = await readExcelFirstSheet(file);
-          await runImport(rowsToTsv(rows), true, uploadBtn, 'Đang xử lý...');
+          rows = await readExcelFirstSheet(file);
         } catch (err) {
           toast('Không đọc được file: ' + (err.message || ''), 'error');
-          uploadBtn.disabled = false;
-          uploadBtn.innerHTML = originalHtml;
+          uploadBtn.innerHTML = uploadBtnIdleHtml;
+          uploadBtn.disabled = !fileInput.files[0];
+          return;
+        }
+        uploadBtn.textContent = 'Đang xử lý...';
+        try {
+          await runImport(rowsToTsv(rows), true);
+        } catch (err) {
+          toast(err.message || 'Có lỗi khi nhập dữ liệu', 'error');
+        } finally {
+          uploadBtn.innerHTML = uploadBtnIdleHtml;
+          uploadBtn.disabled = !fileInput.files[0];
         }
       });
-      sheet.querySelector('#do-paste-import').addEventListener('click', (e) => {
-        runImport(sheet.querySelector('#paste-area').value, false, e.currentTarget, 'Đang xử lý...');
+
+      const pasteBtn = sheet.querySelector('#do-paste-import');
+      const pasteBtnIdleHtml = pasteBtn.innerHTML;
+      pasteBtn.addEventListener('click', async () => {
+        pasteBtn.disabled = true;
+        pasteBtn.textContent = 'Đang xử lý...';
+        try {
+          await runImport(sheet.querySelector('#paste-area').value, false);
+        } catch (err) {
+          toast(err.message || 'Có lỗi khi nhập dữ liệu', 'error');
+        } finally {
+          pasteBtn.disabled = false;
+          pasteBtn.innerHTML = pasteBtnIdleHtml;
+        }
       });
     },
   });

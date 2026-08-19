@@ -23,54 +23,46 @@ export function render(contentEl) {
   const overdueTotal = overdue.reduce((s, c) => s + c.balance, 0);
   const nearDueTotal = nearDue.reduce((s, c) => s + c.balance, 0);
 
-  const pad2 = (n) => String(n).padStart(2, '0');
-
   contentEl.innerHTML = `
     <div class="grid-4 mb-16">
       <div class="stat-tile c-blue"><div class="stat-label">Tổng khách hàng</div><div class="stat-value">${formatNumber(customers.length)}</div></div>
       <div class="stat-tile c-green"><div class="stat-label">Tổng dư nợ</div><div class="stat-value" style="font-size:15px">${formatVND(totalOutstanding)}</div></div>
-      <div class="stat-tile c-pink"><div class="stat-label">Hợp đồng quá hạn</div><div class="stat-value">${formatNumber(overdue.length)}</div></div>
-      <div class="stat-tile c-orange"><div class="stat-label">Gần đến hạn</div><div class="stat-value">${formatNumber(nearDue.length)}</div></div>
+      <div class="stat-tile c-pink" id="tile-overdue" style="cursor:pointer">
+        <div class="stat-label">Hợp đồng quá hạn</div>
+        <div class="stat-value">${formatNumber(overdue.length)}</div>
+        <div class="stat-trend" style="color:var(--danger)">Tổng cộng: ${formatVND(overdueTotal)}</div>
+      </div>
+      <div class="stat-tile c-orange" id="tile-neardue" style="cursor:pointer">
+        <div class="stat-label">Gần đến hạn</div>
+        <div class="stat-value">${formatNumber(nearDue.length)}</div>
+        <div class="stat-trend" style="color:var(--warning)">Tổng cộng: ${formatVND(nearDueTotal)}</div>
+      </div>
     </div>
 
-    <div class="dash-two-col">
-      <div class="card card-pad">
-        <div class="section-head"><h2 style="color:var(--danger)">Hợp đồng quá hạn (${pad2(overdue.length)})</h2><button class="link-more" id="btn-all-overdue" style="background:none;border:none;cursor:pointer">Xem tất cả</button></div>
-        <div class="text-sm text-muted mb-8">Tổng cộng: <b class="text-danger">${formatVND(overdueTotal)}</b></div>
-        ${overdue.length ? overdue.slice(0, 5).map((c) => {
-          const cust = S.getCustomer(c.customerId);
-          return `<div class="table-store-row"><span class="name">${cust ? cust.name : '—'} · ${c.code}</span><span class="val text-danger">${formatVND(c.balance)}</span></div>`;
-        }).join('') : `<p class="text-sm text-muted">Không có hợp đồng quá hạn.</p>`}
-      </div>
-      <div class="card card-pad">
-        <div class="section-head"><h2 style="color:var(--warning)">Gần đến hạn (${pad2(nearDue.length)})</h2><button class="link-more" id="btn-all-neardue" style="background:none;border:none;cursor:pointer">Xem tất cả</button></div>
-        <div class="text-sm text-muted mb-8">Tổng cộng: <b style="color:var(--warning)">${formatVND(nearDueTotal)}</b></div>
-        ${nearDue.length ? nearDue.slice(0, 5).map((c) => {
-          const cust = S.getCustomer(c.customerId);
-          return `<div class="table-store-row"><span class="name">${cust ? cust.name : '—'} · ${c.code}</span><span class="val" style="color:var(--warning)">${formatVND(c.balance)}</span></div>`;
-        }).join('') : `<p class="text-sm text-muted">Không có hợp đồng nào sắp đến hạn.</p>`}
-      </div>
-      <div class="card card-pad">
-        <div class="section-head"><h2>Yêu cầu mới nhất</h2><a href="#/admin/yeu-cau" class="link-more">Xem tất cả</a></div>
-        ${requests.length ? requests.slice(0, 5).map((r) => {
-          const cust = S.getCustomer(r.customerId);
-          const typeLabel = S.REQUEST_TYPE.find((t) => t.id === r.type)?.label || '';
-          return `
-          <div class="list-row" style="padding:8px 0">
-            <div class="row-thumb" style="background:${colorFor(r.customerId)}">${initials(cust ? cust.name : '?')}</div>
-            <div class="row-main">
-              <div class="row-title" style="font-size:13.5px">${cust ? cust.name : '—'}</div>
-              <div class="row-sub">${typeLabel} · ${formatDateTime(r.createdAt)}</div>
-            </div>
-            <div class="row-end">${statusBadge(S.REQUEST_STATUS_MAP[r.status])}</div>
-          </div>`;
-        }).join('') : `<p class="text-sm text-muted">Chưa có yêu cầu nào.</p>`}
-      </div>
+    <div class="card card-pad">
+      <div class="section-head"><h2>Yêu cầu mới nhất</h2><a href="#/admin/yeu-cau" class="link-more">Xem tất cả</a></div>
+      ${requests.length ? requests.slice(0, 5).map((r) => {
+        const cust = S.getCustomer(r.customerId);
+        const typeLabel = S.REQUEST_TYPE.find((t) => t.id === r.type)?.label || '';
+        return `
+        <div class="list-row" style="padding:8px 0">
+          <div class="row-thumb" style="background:${colorFor(r.customerId)}">${initials(cust ? cust.name : '?')}</div>
+          <div class="row-main">
+            <div class="row-title" style="font-size:13.5px">${cust ? cust.name : '—'}</div>
+            <div class="row-sub">${typeLabel} · ${formatDateTime(r.createdAt)}</div>
+          </div>
+          <div class="row-end">${statusBadge(S.REQUEST_STATUS_MAP[r.status])}</div>
+        </div>`;
+      }).join('') : `<p class="text-sm text-muted">Chưa có yêu cầu nào.</p>`}
     </div>
   `;
 
-  contentEl.querySelector('#btn-all-overdue').addEventListener('click', () => openContractListModal('Hợp đồng quá hạn', overdue, isStaff, 'var(--danger)'));
-  contentEl.querySelector('#btn-all-neardue').addEventListener('click', () => openContractListModal('Gần đến hạn', nearDue, isStaff, 'var(--warning)'));
+  // Bấm thẳng vào ô "Hợp đồng quá hạn"/"Gần đến hạn" ở trên là ra đúng danh
+  // sách chi tiết của nhóm đó (giống hệt "Xem tất cả" trước đây) — gộp
+  // thông tin số lượng + tổng tiền + danh sách vào chung 1 chỗ cho gọn,
+  // không cần 2 bảng riêng bên dưới nữa.
+  contentEl.querySelector('#tile-overdue').addEventListener('click', () => openContractListModal('Hợp đồng quá hạn', overdue, isStaff, 'var(--danger)'));
+  contentEl.querySelector('#tile-neardue').addEventListener('click', () => openContractListModal('Gần đến hạn', nearDue, isStaff, 'var(--warning)'));
 }
 
 /**
