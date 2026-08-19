@@ -13,7 +13,7 @@ export const ADMIN_NAV = [
   { path: '#/admin/yeu-cau', label: 'Yêu cầu tư vấn', icon: 'clipboard' },
 ];
 export const ADMIN_NAV_SUPER_ONLY = [
-  { path: '#/admin/nhan-vien', label: 'Quản lý nhân viên', icon: 'idCard' },
+  { path: '#/admin/nhan-vien', label: 'Quản lý User', icon: 'idCard' },
   { path: '#/admin/cai-dat', label: 'Cài đặt', icon: 'settings' },
 ];
 

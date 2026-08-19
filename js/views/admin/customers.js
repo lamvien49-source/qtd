@@ -119,17 +119,17 @@ export function render(contentEl, filterEl) {
       const q = query.trim().toLowerCase();
       list = list.filter((c) => c.name.toLowerCase().includes(q) || c.cccd.includes(q) || (c.phone || '').includes(q));
     }
-    // Gộp sẵn hợp đồng + tổng gốc/lãi từng khách hàng — dùng để hiển thị & sắp xếp
+    // Gộp sẵn hợp đồng + tổng gốc (= dư nợ hiện tại)/lãi từng khách hàng — dùng để hiển thị & sắp xếp
     let enriched = list.map((c) => {
       const contracts = S.listContractsByCustomer(c.id);
-      const totalPrincipal = contracts.reduce((s, ct) => s + (ct.principal || 0), 0);
+      const totalBalance = contracts.reduce((s, ct) => s + (ct.balance || 0), 0);
       const totalInterest = contracts.reduce((s, ct) => s + S.accruedInterest(ct), 0);
-      return { c, contracts, totalPrincipal, totalInterest };
+      return { c, contracts, totalBalance, totalInterest };
     });
     if (onlyOverdue) enriched = enriched.filter((e) => e.contracts.some((ct) => ct.status === 'qua_han'));
     if (sortMode !== 'default') {
       const [field, dir] = sortMode.split('-');
-      const key = field === 'principal' ? 'totalPrincipal' : 'totalInterest';
+      const key = field === 'principal' ? 'totalBalance' : 'totalInterest';
       enriched.sort((a, b) => (dir === 'asc' ? a[key] - b[key] : b[key] - a[key]));
     }
 
@@ -234,7 +234,7 @@ function showCredential(customer, tempPassword) {
   });
 }
 
-function openCustomerDetail(customerId, { readOnly = false } = {}) {
+export function openCustomerDetail(customerId, { readOnly = false } = {}) {
   const c = S.getCustomer(customerId);
   const contracts = S.listContractsByCustomer(customerId);
   const close = openModal({
@@ -273,12 +273,17 @@ function openCustomerDetail(customerId, { readOnly = false } = {}) {
   });
 }
 
-/** Cột phải "Gốc / Lãi" — dùng cho hàng khách hàng chỉ có 1 hợp đồng lẫn từng dòng hợp đồng gọn. */
+/**
+ * Cột phải "Gốc / Lãi" — dùng cho hàng khách hàng chỉ có 1 hợp đồng lẫn từng
+ * dòng hợp đồng gọn. "Gốc" ở đây là DƯ NỢ HIỆN TẠI (số còn phải trả), không
+ * phải số tiền vay ban đầu — số tiền vay ban đầu chỉ hiện trong màn chi tiết
+ * hợp đồng (mục "Số tiền vay ban đầu").
+ */
 function contractAmountsHtml(ct) {
   const interest = S.accruedInterest(ct);
   return `
     <div class="row-end">
-      <div class="amount">Gốc: ${formatVND(ct.principal)}</div>
+      <div class="amount">Gốc: ${formatVND(ct.balance)}</div>
       <div class="amount-sub" style="color:var(--warning)">Lãi: ${formatVND(interest)}</div>
     </div>`;
 }

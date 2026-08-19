@@ -39,10 +39,19 @@ function persist() {
   catch (e) { console.error('Không lưu được dữ liệu', e); }
 }
 
+/** Vá dữ liệu cũ đã lưu trong localStorage từ bản trước — thêm field mới còn thiếu để tránh lỗi (VD: allowedXom). */
+function migrateState() {
+  if (!state) return;
+  (state.admins || []).forEach((a) => {
+    if (!Array.isArray(a.allowedThon)) a.allowedThon = [];
+    if (!Array.isArray(a.allowedXom)) a.allowedXom = [];
+  });
+}
+
 export async function init() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
-    try { state = JSON.parse(raw); return; }
+    try { state = JSON.parse(raw); migrateState(); return; }
     catch (e) { console.warn('Dữ liệu lỗi, tạo lại dữ liệu mẫu.', e); }
   }
   await seedDemoData();
@@ -362,22 +371,23 @@ export function listAdmins() { return state.admins; }
 export function isSuperAdmin(id) { return getAdmin(id)?.role === 'super'; }
 
 /**
- * Quản trị viên (role 'super') tạo tài khoản nhân viên (role 'staff') — có
- * tên đăng nhập + mật khẩu (tự sinh nếu không nhập) + phân quyền xem ngay
- * trong lúc tạo. Phân quyền 2 cấp: allowedThon (xem trọn cả Thôn, gồm mọi
- * Xóm trong đó) và allowedXom (chỉ xem riêng 1 vài Xóm cụ thể dù Thôn chứa
- * nó không được cấp trọn).
+ * Tạo tài khoản quản trị (role 'super' toàn quyền hoặc 'staff' chỉ xem) —
+ * có tên đăng nhập + mật khẩu (tự sinh nếu không nhập) + phân quyền xem ngay
+ * trong lúc tạo (chỉ áp dụng cho 'staff'). Phân quyền 2 cấp: allowedThon
+ * (xem trọn cả Thôn, gồm mọi Xóm trong đó) và allowedXom (chỉ xem riêng 1
+ * vài Xóm cụ thể dù Thôn chứa nó không được cấp trọn).
  */
-export async function addStaffAdmin({ username, name, password, allowedThon, allowedXom }) {
+export async function addStaffAdmin({ username, name, password, role, allowedThon, allowedXom }) {
   const uname = String(username || '').trim();
   if (!uname) throw new Error('Cần nhập tên đăng nhập');
   if (state.admins.some((a) => a.username === uname)) throw new Error('Tên đăng nhập đã tồn tại');
+  const finalRole = role === 'super' ? 'super' : 'staff';
   const finalPassword = password && password.trim() ? password.trim() : genTempPassword();
   const cred = await makeCredential(finalPassword);
   const staff = {
-    id: genId('staff'), username: uname, name: name || uname, role: 'staff',
-    allowedThon: Array.isArray(allowedThon) ? allowedThon : [],
-    allowedXom: Array.isArray(allowedXom) ? allowedXom : [],
+    id: genId('staff'), username: uname, name: name || uname, role: finalRole,
+    allowedThon: finalRole === 'staff' && Array.isArray(allowedThon) ? allowedThon : [],
+    allowedXom: finalRole === 'staff' && Array.isArray(allowedXom) ? allowedXom : [],
     ...cred, createdAt: new Date().toISOString(),
   };
   state.admins.push(staff);
@@ -403,10 +413,13 @@ export async function resetStaffPassword(id) {
 }
 export function deleteStaffAdmin(id) {
   const a = getAdmin(id);
-  if (!a || a.role !== 'staff') return; // không cho xóa tài khoản quản trị chính
+  if (!a) return;
+  if (a.role === 'super' && state.admins.filter((x) => x.role === 'super').length <= 1) return; // luôn giữ lại ít nhất 1 quản trị viên toàn quyền
   state.admins = state.admins.filter((x) => x.id !== id);
   notify();
 }
+/** Tài khoản khách hàng có đang bị tạm khóa hay không (do nhập sai mật khẩu nhiều lần). */
+export function isCustomerLocked(c) { return !!(c.lockedUntil && c.lockedUntil > Date.now()); }
 
 // ------------------------------------------------------------
 // Yêu cầu tư vấn / mở khoản vay

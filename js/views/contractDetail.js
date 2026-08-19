@@ -179,13 +179,11 @@ function openPaymentModal(contract, customer, accrued) {
           </div>
           ${hasBank ? `
             <div style="text-align:center">
+              <button type="button" class="btn btn-outline btn-block mb-8" id="btn-download-qr">${icon('download', 'icon-sm')} Tải ảnh mã QR</button>
               <img id="qr-img" alt="Mã QR chuyển khoản" style="max-width:220px;width:100%;border:1px solid var(--border);border-radius:12px"/>
-              <div class="field-hint mt-8 mb-12">Quét mã bằng app ngân hàng/ví điện tử bất kỳ hỗ trợ VietQR để chuyển khoản.</div>
-              <div class="flex gap-8">
-                <button type="button" class="btn btn-primary btn-block" id="btn-share-qr">${icon('wallet', 'icon-sm')} Chọn app ngân hàng để trả</button>
-              </div>
-              <button type="button" class="btn btn-outline btn-block mt-8" id="btn-download-qr">${icon('download', 'icon-sm')} Tải ảnh mã QR</button>
-              <div class="field-hint mt-8">"Chọn app ngân hàng để trả" mở bảng chọn ứng dụng có sẵn trên điện thoại (giống khi chia sẻ ảnh) — chọn đúng app ngân hàng/ví đang dùng để quét ảnh QR ngay trong app đó. Máy tính không hỗ trợ sẽ tự chuyển sang tải ảnh.</div>
+              <div class="field-hint mt-8 mb-12">Quét mã bằng app ngân hàng/ví điện tử bất kỳ hỗ trợ VietQR để chuyển khoản — cách chắc chắn hoạt động nhất, số tiền &amp; nội dung tự điền sẵn.</div>
+              <button type="button" class="btn btn-outline btn-block" id="btn-share-qr">${icon('wallet', 'icon-sm')} Chia sẻ ảnh QR</button>
+              <div class="field-hint mt-8">Mở bảng chọn ứng dụng có sẵn trên điện thoại để gửi ảnh QR sang app khác (lưu lại, nhờ người khác chuyển giúp...). <b>Lưu ý:</b> đây chỉ là chia sẻ ảnh — hầu hết app ngân hàng chưa tự mở đúng màn hình chuyển khoản kèm sẵn số tiền/nội dung từ ảnh chia sẻ, bạn cần tự vào app đó bấm "Quét QR từ ảnh" (nếu có) hoặc quét trực tiếp bằng camera như trên là cách chắc chắn nhất.</div>
             </div>
           ` : `
             <div class="field-hint text-danger">Quỹ chưa cấu hình mã QR (mã ngân hàng). Vui lòng chuyển khoản thủ công theo thông tin ở trên, hoặc liên hệ quầy giao dịch.</div>
