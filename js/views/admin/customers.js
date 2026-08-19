@@ -133,6 +133,11 @@ export function render(contentEl, filterEl) {
       const totalInterest = contracts.reduce((s, ct) => s + S.accruedInterest(ct), 0);
       return { c, contracts, totalBalance, totalInterest };
     });
+    // Khách không còn dư nợ nào (hết hợp đồng, hoặc file mới nhất không còn
+    // họ nữa nên hợp đồng đã bị full-sync xóa) thì KHÔNG hiển thị ở đây nữa
+    // — dù hồ sơ/tài khoản Use của họ vẫn được giữ (xem Quản lý User), chỉ
+    // là không còn hiện trong danh sách khách hàng đang vay này.
+    enriched = enriched.filter((e) => e.totalBalance > 0);
     if (urgencyFilters.size) enriched = enriched.filter((e) => e.contracts.some((ct) => urgencyFilters.has(S.contractUrgency(ct))));
     if (sortMode !== 'default') {
       const [field, dir] = sortMode.split('-');
