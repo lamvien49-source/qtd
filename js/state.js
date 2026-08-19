@@ -4,7 +4,7 @@
 // dùng để vận hành thật — chỉ minh họa giao diện & luồng nghiệp vụ.
 // Toàn bộ dữ liệu khách hàng trong file này là dữ liệu GIẢ.
 // ============================================================
-import { genId, mulberry32, randInt, addDays } from './utils.js';
+import { genId, mulberry32, randInt, addDays, daysBetween } from './utils.js';
 
 export const STORAGE_KEY = 'qtd_demo_v1';
 
@@ -105,6 +105,17 @@ export function customerOutstandingTotal(customerId) {
     .reduce((s, c) => s + c.balance, 0);
 }
 
+/**
+ * Lãi phát sinh từ ngày đã trả lãi đến ngày hiện tại.
+ * Công thức: Số dư × số ngày × lãi suất năm / 365
+ */
+export function accruedInterest(contract, asOf = new Date()) {
+  if (contract.status === 'da_tat_toan') return 0;
+  const from = contract.interestPaidUntil || contract.disbursedDate;
+  const days = Math.max(0, daysBetween(new Date(from), asOf));
+  return Math.round(contract.balance * days * (contract.interestRate / 100) / 365);
+}
+
 /** Đăng nhập khách hàng bằng CCCD + mật khẩu. */
 export async function loginCustomer(cccd, password) {
   const c = findCustomerByCccd(cccd);
@@ -167,13 +178,14 @@ export async function upsertCustomer({ cccd, name, phone, address }) {
   return { customer: c, isNew: true, tempPassword: temp };
 }
 
-export function upsertContract({ customerId, code, principal, disbursedDate, dueDate, interestRate, balance, status, termMonths }) {
+export function upsertContract({ customerId, code, principal, disbursedDate, dueDate, interestRate, balance, status, termMonths, interestPaidUntil }) {
   let ct = state.contracts.find((c) => c.code === code);
   const data = {
     customerId, code, principal: Number(principal) || 0,
     disbursedDate, dueDate, interestRate: Number(interestRate) || 0,
     balance: Number(balance) || 0, status: status || 'dang_vay',
     termMonths: Number(termMonths) || null,
+    interestPaidUntil: interestPaidUntil || disbursedDate,
   };
   if (ct) { Object.assign(ct, data); }
   else { ct = { id: genId('hd'), ...data }; state.contracts.push(ct); }
@@ -223,7 +235,7 @@ export async function importFromPastedTable(text) {
     const first = cells[0].toLowerCase();
     if (HEADER_HINTS.some((h) => first.includes(h))) continue; // bỏ qua dòng tiêu đề
 
-    const [cccd, name, phone, code, principal, disbursedDate, dueDate, interestRate, balance] = cells.map((c) => c.trim());
+    const [cccd, name, phone, code, principal, disbursedDate, dueDate, interestRate, balance, interestPaidUntil] = cells.map((c) => c.trim());
     if (!cccd || !/^\d{9,12}$/.test(cccd.replace(/\s/g, ''))) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
 
     const { customer, isNew, tempPassword } = await upsertCustomer({ cccd: cccd.replace(/\s/g, ''), name, phone });
@@ -231,11 +243,13 @@ export async function importFromPastedTable(text) {
     else result.updatedCustomers++;
 
     if (code) {
+      const disbursed = parseVNDate(disbursedDate) || new Date().toISOString().slice(0, 10);
       upsertContract({
         customerId: customer.id, code,
-        principal: parseVNNumber(principal), disbursedDate: parseVNDate(disbursedDate) || new Date().toISOString().slice(0, 10),
+        principal: parseVNNumber(principal), disbursedDate: disbursed,
         dueDate: parseVNDate(dueDate), interestRate: parseVNNumber(interestRate),
         balance: parseVNNumber(balance || principal), status: 'dang_vay',
+        interestPaidUntil: parseVNDate(interestPaidUntil) || disbursed,
       });
       result.contracts++;
     }
@@ -344,6 +358,11 @@ async function seedDemoData() {
         balance: status === 'da_tat_toan' ? 0 : Math.round((principal * (0.3 + rng() * 0.7)) / 100000) * 100000,
         status,
         termMonths: randInt(rng, 6, 24),
+        // Giả lập lần đóng lãi gần nhất: cách đây một số ngày (0-45 ngày), không vượt quá ngày giải ngân
+        interestPaidUntil: (() => {
+          const lastPaid = addDays(now, -randInt(rng, 0, 45));
+          return (lastPaid < disbursed ? disbursed : lastPaid).toISOString().slice(0, 10);
+        })(),
       });
     }
   });

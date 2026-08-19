@@ -151,11 +151,13 @@ function openCustomerDetail(customerId) {
 
 function contractRow(ct) {
   const status = S.CONTRACT_STATUS_MAP[ct.status];
+  const interest = S.accruedInterest(ct);
   return `
     <div class="list-row" data-edit-contract="${ct.id}" style="cursor:pointer">
       <div class="row-main">
         <div class="row-title">${ct.code}</div>
         <div class="row-sub">Vay ${formatVND(ct.principal)} · ${formatDate(ct.disbursedDate)} → ${formatDate(ct.dueDate)}</div>
+        <div class="row-sub">Đã trả lãi đến ${formatDate(ct.interestPaidUntil || ct.disbursedDate)}${interest > 0 ? ` · Lãi đến nay: ${formatVND(interest)}` : ''}</div>
       </div>
       <div class="row-end"><div class="amount">${formatVND(ct.balance)}</div>${statusBadge(status)}</div>
     </div>`;
@@ -181,6 +183,11 @@ function openContractForm(customerId, contract) {
           <div class="field"><label>Kỳ hạn (tháng)</label><input name="termMonths" type="number" min="1" value="${contract ? contract.termMonths || '' : ''}"/></div>
         </div>
         <div class="field">
+          <label>Đã trả lãi đến ngày</label>
+          <input name="interestPaidUntil" type="date" value="${contract ? contract.interestPaidUntil || contract.disbursedDate : ''}"/>
+          <div class="field-hint">Dùng để tính lãi phát sinh đến hiện tại (Số dư × số ngày × lãi suất năm / 365).</div>
+        </div>
+        <div class="field">
           <label>Trạng thái</label>
           <select name="status">
             ${S.CONTRACT_STATUS.map((s) => `<option value="${s.id}" ${contract?.status === s.id ? 'selected' : ''}>${s.label}</option>`).join('')}
@@ -200,6 +207,7 @@ function openContractForm(customerId, contract) {
           customerId, code: fd.get('code'), principal: fd.get('principal'), balance: fd.get('balance'),
           disbursedDate: fd.get('disbursedDate'), dueDate: fd.get('dueDate'),
           interestRate: fd.get('interestRate'), termMonths: fd.get('termMonths'), status: fd.get('status'),
+          interestPaidUntil: fd.get('interestPaidUntil'),
         });
         toast('Đã lưu hợp đồng', 'success');
         closeFn();
@@ -222,7 +230,7 @@ function openImportModal() {
     bodyHtml: `
       <p class="text-sm text-muted mb-8">
         Mở file Excel, chọn vùng dữ liệu (không lấy dòng tiêu đề), <b>Copy</b>, rồi <b>dán (Ctrl+V)</b> vào ô bên dưới.
-        Thứ tự cột: <b>CCCD, Họ tên, SĐT, Mã hợp đồng, Số tiền vay, Ngày vay, Ngày đến hạn, Lãi suất, Dư nợ</b>.
+        Thứ tự cột: <b>CCCD, Họ tên, SĐT, Mã hợp đồng, Số tiền vay, Ngày vay, Ngày đến hạn, Lãi suất, Dư nợ, Đã trả lãi đến ngày</b> (cột cuối có thể để trống).
       </p>
       <div class="field"><textarea id="paste-area" rows="8" placeholder="Dán dữ liệu vào đây..." style="width:100%;border:1px solid var(--border-strong);border-radius:8px;padding:10px;font-size:13px;font-family:monospace"></textarea></div>
       <div id="import-result"></div>
