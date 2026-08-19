@@ -23,7 +23,7 @@ const SORT_LABEL = Object.fromEntries(SORT_OPTIONS.map((o) => [o.value, o.label]
 let query = '';
 let filterThon = []; // rỗng = Tất cả — có thể tích chọn nhiều Thôn cùng lúc
 let filterXom = [];  // rỗng = Tất cả — có thể tích chọn nhiều Xóm cùng lúc
-let urgencyFilter = 'all'; // 'all' | 'qua_han' | 'gan_den_han'
+let urgencyFilters = new Set(); // rỗng = Tất cả — có thể tích cả "qua_han" lẫn "gan_den_han" cùng lúc
 let sortMode = 'default';
 
 function multiPillLabel(prefix, values) {
@@ -51,9 +51,9 @@ export function render(contentEl, filterEl) {
         ${pillSelectHtml('pill-sort', 'Sắp xếp: Mặc định')}
       </div>
       <div class="chip-row mb-8">
-        <button class="chip ${urgencyFilter === 'all' ? 'active' : ''}" data-urgency="all">Tất cả</button>
-        <button class="chip ${urgencyFilter === 'qua_han' ? 'active' : ''}" data-urgency="qua_han">${icon('alert', 'icon-sm')} Nợ quá hạn</button>
-        <button class="chip ${urgencyFilter === 'gan_den_han' ? 'active' : ''}" data-urgency="gan_den_han">Gần đến hạn</button>
+        <button class="chip ${urgencyFilters.size === 0 ? 'active' : ''}" data-urgency="all">Tất cả</button>
+        <button class="chip ${urgencyFilters.has('qua_han') ? 'active' : ''}" data-urgency="qua_han">${icon('alert', 'icon-sm')} Nợ quá hạn</button>
+        <button class="chip ${urgencyFilters.has('gan_den_han') ? 'active' : ''}" data-urgency="gan_den_han">Gần đến hạn</button>
       </div>
       ${!isStaff ? `
       <div class="flex gap-8 mb-8">
@@ -68,7 +68,13 @@ export function render(contentEl, filterEl) {
     filterEl.querySelector('#btn-add').addEventListener('click', () => openCustomerForm());
   }
   filterEl.querySelectorAll('[data-urgency]').forEach((chip) => {
-    chip.addEventListener('click', () => { urgencyFilter = chip.dataset.urgency; render(contentEl, filterEl); });
+    chip.addEventListener('click', () => {
+      const val = chip.dataset.urgency;
+      if (val === 'all') urgencyFilters.clear();
+      else if (urgencyFilters.has(val)) urgencyFilters.delete(val);
+      else urgencyFilters.add(val);
+      render(contentEl, filterEl);
+    });
   });
 
   function bindPickers() {
@@ -127,7 +133,7 @@ export function render(contentEl, filterEl) {
       const totalInterest = contracts.reduce((s, ct) => s + S.accruedInterest(ct), 0);
       return { c, contracts, totalBalance, totalInterest };
     });
-    if (urgencyFilter !== 'all') enriched = enriched.filter((e) => e.contracts.some((ct) => S.contractUrgency(ct) === urgencyFilter));
+    if (urgencyFilters.size) enriched = enriched.filter((e) => e.contracts.some((ct) => urgencyFilters.has(S.contractUrgency(ct))));
     if (sortMode !== 'default') {
       const [field, dir] = sortMode.split('-');
       const key = field === 'principal' ? 'totalBalance' : 'totalInterest';

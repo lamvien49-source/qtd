@@ -1,7 +1,7 @@
 import * as S from '../../state.js';
 import { pageHeader } from '../../components/shell.js';
 import { openModal } from '../../components/modal.js';
-import { emptyState, statusBadge } from '../../components/ui.js';
+import { emptyState } from '../../components/ui.js';
 import { formatVND, formatNumber, formatDate, daysUntil } from '../../utils.js';
 import { openContractView } from './customers.js';
 
@@ -20,6 +20,8 @@ export function render(contentEl) {
   const totalOutstanding = contracts.filter((c) => S.effectiveContractStatus(c) !== 'da_tat_toan').reduce((s, c) => s + c.balance, 0);
   const overdue = contracts.filter((c) => S.contractUrgency(c) === 'qua_han');
   const nearDue = contracts.filter((c) => S.contractUrgency(c) === 'gan_den_han');
+  const overdueTotal = overdue.reduce((s, c) => s + c.balance, 0);
+  const nearDueTotal = nearDue.reduce((s, c) => s + c.balance, 0);
   const newRequests = requests.filter((r) => r.status === 'moi');
 
   const pad2 = (n) => String(n).padStart(2, '0');
@@ -36,6 +38,7 @@ export function render(contentEl) {
     <div class="dash-two-col">
       <div class="card card-pad">
         <div class="section-head"><h2 style="color:var(--danger)">Hợp đồng quá hạn (${pad2(overdue.length)})</h2><button class="link-more" id="btn-all-overdue" style="background:none;border:none;cursor:pointer">Xem tất cả</button></div>
+        <div class="text-sm text-muted mb-8">Tổng cộng: <b class="text-danger">${formatVND(overdueTotal)}</b></div>
         ${overdue.length ? overdue.slice(0, 5).map((c) => {
           const cust = S.getCustomer(c.customerId);
           return `<div class="table-store-row"><span class="name">${cust ? cust.name : '—'} · ${c.code}</span><span class="val text-danger">${formatVND(c.balance)}</span></div>`;
@@ -43,9 +46,10 @@ export function render(contentEl) {
       </div>
       <div class="card card-pad">
         <div class="section-head"><h2 style="color:var(--warning)">Gần đến hạn (${pad2(nearDue.length)})</h2><button class="link-more" id="btn-all-neardue" style="background:none;border:none;cursor:pointer">Xem tất cả</button></div>
+        <div class="text-sm text-muted mb-8">Tổng cộng: <b style="color:var(--warning)">${formatVND(nearDueTotal)}</b></div>
         ${nearDue.length ? nearDue.slice(0, 5).map((c) => {
           const cust = S.getCustomer(c.customerId);
-          return `<div class="table-store-row"><span class="name">${cust ? cust.name : '—'} · ${c.code}</span><span class="val" style="color:var(--warning)">Còn ${daysUntil(c.dueDate)} ngày</span></div>`;
+          return `<div class="table-store-row"><span class="name">${cust ? cust.name : '—'} · ${c.code}</span><span class="val" style="color:var(--warning)">${formatVND(c.balance)}</span></div>`;
         }).join('') : `<p class="text-sm text-muted">Không có hợp đồng nào sắp đến hạn.</p>`}
       </div>
       <div class="card card-pad">
@@ -58,18 +62,24 @@ export function render(contentEl) {
     </div>
   `;
 
-  contentEl.querySelector('#btn-all-overdue').addEventListener('click', () => openContractListModal('Hợp đồng quá hạn', overdue, isStaff));
-  contentEl.querySelector('#btn-all-neardue').addEventListener('click', () => openContractListModal('Gần đến hạn', nearDue, isStaff));
+  contentEl.querySelector('#btn-all-overdue').addEventListener('click', () => openContractListModal('Hợp đồng quá hạn', overdue, isStaff, 'var(--danger)'));
+  contentEl.querySelector('#btn-all-neardue').addEventListener('click', () => openContractListModal('Gần đến hạn', nearDue, isStaff, 'var(--warning)'));
 }
 
-/** Danh sách gọn chỉ gồm các hợp đồng thuộc đúng nhóm (quá hạn / gần đến hạn) — bấm vào 1 dòng để mở thẳng chi tiết hợp đồng. */
-function openContractListModal(title, contracts, isStaff) {
+/**
+ * Danh sách gọn chỉ gồm các hợp đồng thuộc đúng nhóm (quá hạn / gần đến hạn)
+ * — bấm vào 1 dòng để mở thẳng chi tiết hợp đồng. Bên phải hiện thẳng số
+ * tiền (tô màu theo nhóm) thay vì nhãn trạng thái, kèm tổng cộng cả nhóm ở
+ * đầu danh sách để dễ theo dõi.
+ */
+function openContractListModal(title, contracts, isStaff, colorVar) {
+  const total = contracts.reduce((s, ct) => s + ct.balance, 0);
   openModal({
     title: `${title} (${contracts.length})`,
     bodyHtml: `
+      <div class="text-sm text-muted mb-12">Tổng cộng: <b style="color:${colorVar}">${formatVND(total)}</b></div>
       ${contracts.length ? contracts.map((ct) => {
         const cust = S.getCustomer(ct.customerId);
-        const status = S.CONTRACT_STATUS_MAP[S.effectiveContractStatus(ct)];
         const d = daysUntil(ct.dueDate);
         return `
         <div class="list-row" data-view-ct="${ct.id}" style="cursor:pointer">
@@ -77,7 +87,7 @@ function openContractListModal(title, contracts, isStaff) {
             <div class="row-title">${cust ? cust.name : '—'} · ${ct.code}</div>
             <div class="row-sub">Đến hạn ${formatDate(ct.dueDate)} · ${d < 0 ? `Quá hạn ${Math.abs(d)} ngày` : `Còn ${d} ngày`}</div>
           </div>
-          <div class="row-end">${statusBadge(status)}</div>
+          <div class="row-end"><b style="color:${colorVar}">${formatVND(ct.balance)}</b></div>
         </div>`;
       }).join('') : emptyState({ iconName: 'checkCircle', title: 'Không có hợp đồng nào', message: 'Danh sách hiện đang trống.' })}
     `,

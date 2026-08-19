@@ -190,25 +190,30 @@ export function contractUrgency(contract, asOf = new Date()) {
 }
 
 /**
- * Số ngày tính lãi — lãi đã thu ĐẾN HẾT ngày "Thu lãi đến ngày" nên ngày tiếp
- * theo (thu lãi đến ngày + 1) mới là ngày bắt đầu tính lãi mới, không tính
- * trùng lại ngày đã thu. (VD: giải ngân 18/08, thu lãi đến ngày 19/08 thì
- * lãi mới tính bắt đầu từ 20/08.)
+ * Số ngày tính lãi — tính bình thường (số ngày từ "Thu lãi đến ngày" tới hôm
+ * nay), TRỪ trường hợp đặc biệt "Thu lãi đến ngày" = ngày giải ngân + 1 ngày
+ * (quy ước thu lãi ngày đầu ngay lúc giải ngân) thì cộng thêm 1 ngày nữa.
+ * VD: giải ngân 17/08, thu lãi đến ngày 18/08 (= giải ngân + 1), hôm nay
+ * 19/08 -> bình thường ra 1 ngày, cộng thêm 1 ngày đặc biệt = 2 ngày.
  */
 export function interestDaysAccrued(contract, asOf = new Date()) {
   const paidUntil = contract.interestPaidUntil || contract.disbursedDate;
-  const from = addDays(new Date(paidUntil), 1);
-  return Math.max(0, daysBetween(from, asOf));
+  let days = Math.max(0, daysBetween(new Date(paidUntil), asOf));
+  if (contract.disbursedDate && daysBetween(new Date(contract.disbursedDate), new Date(paidUntil)) === 1) {
+    days += 1;
+  }
+  return days;
 }
 /**
  * Lãi phát sinh từ ngày đã trả lãi đến ngày hiện tại.
- * Công thức: Số dư × số ngày × lãi suất năm / 365, làm tròn đến đồng gần nhất
- * (Math.round — tự làm tròn lên hoặc xuống tùy phần lẻ >= hay < 0,5).
+ * Công thức: Số dư × số ngày × lãi suất năm / 365, làm tròn đến HÀNG NGHÌN
+ * gần nhất (VD: 81.500 -> 82.000; 81.350 -> 81.000).
  */
 export function accruedInterest(contract, asOf = new Date()) {
   if (effectiveContractStatus(contract, asOf) === 'da_tat_toan') return 0;
   const days = interestDaysAccrued(contract, asOf);
-  return Math.round(contract.balance * days * (contract.interestRate / 100) / 365);
+  const raw = contract.balance * days * (contract.interestRate / 100) / 365;
+  return Math.round(raw / 1000) * 1000;
 }
 
 /** Đăng nhập khách hàng bằng CCCD HOẶC số điện thoại + mật khẩu. */
@@ -424,26 +429,42 @@ export function parseVNDate(str) {
   return Number.isNaN(dt.getTime()) ? '' : dt.toISOString().slice(0, 10);
 }
 
-/** Dọn hồ sơ khách hàng không còn hợp đồng nào VÀ chưa có tài khoản Use — Use thì luôn giữ lại dù hết hợp đồng (2 thứ độc lập với nhau). */
+/**
+ * Dọn hồ sơ khách hàng không còn dư nợ nào (hết hợp đồng, hoặc còn hợp đồng
+ * nhưng tổng dư nợ = 0, đã tất toán hết) VÀ chưa có tài khoản Use — xóa luôn
+ * khỏi mục Khách hàng, kèm dọn theo các hợp đồng dư nợ 0 còn sót của họ. Use
+ * thì LUÔN giữ lại dù hết dư nợ (2 thứ độc lập với nhau).
+ */
 function pruneEmptyCustomerProfiles() {
-  const customersWithContracts = new Set(state.contracts.map((ct) => ct.customerId));
+  const balanceByCustomer = new Map();
+  for (const ct of state.contracts) {
+    balanceByCustomer.set(ct.customerId, (balanceByCustomer.get(ct.customerId) || 0) + (ct.balance || 0));
+  }
+  const keepIds = new Set(
+    state.customers.filter((c) => (balanceByCustomer.get(c.id) || 0) > 0 || (c.salt && c.hash)).map((c) => c.id)
+  );
   const before = state.customers.length;
-  state.customers = state.customers.filter((c) => customersWithContracts.has(c.id) || (c.salt && c.hash));
+  state.customers = state.customers.filter((c) => keepIds.has(c.id));
+  state.contracts = state.contracts.filter((ct) => keepIds.has(ct.customerId));
   return before - state.customers.length;
 }
 
 const HEADER_HINTS = ['cccd', 'cmnd', 'người nhận nợ', 'nguoi nhan no', 'họ tên', 'ho ten', 'số hđtd', 'so hdtd'];
 /**
- * Nhập dữ liệu hợp đồng từ Excel/dữ liệu dán.
- * - CCCD CHƯA từng có trong hệ thống -> tạo hồ sơ mới VÀ tự cấp luôn tài
+ * Nhập dữ liệu hợp đồng từ Excel/dữ liệu dán — coi file/dữ liệu nhập là
+ * NGUỒN SỰ THẬT mới nhất: tên/SĐT/địa chỉ luôn được cập nhật ghi đè theo
+ * đúng dữ liệu vừa nhập cho MỌI khách hàng khớp CCCD (dù mới hay đã có sẵn
+ * hồ sơ/tài khoản) — Use đã tạo trước cho CCCD đó lần đăng nhập sau sẽ tự
+ * thấy ngay thông tin mới vì dùng chung 1 hồ sơ.
+ * - CCCD CHƯA từng có trong hệ thống -> ngoài tạo hồ sơ còn tự cấp luôn tài
  *   khoản Use (mật khẩu tự sinh ngẫu nhiên, trả về trong result.newAccounts
  *   để hiện cho admin gửi khách).
- * - CCCD ĐÃ có sẵn (dù chỉ là hồ sơ hay đã có tài khoản Use) -> KHÔNG đụng
- *   gì đến tên/SĐT/địa chỉ/tài khoản của họ, chỉ cập nhật hợp đồng.
+ * - CCCD ĐÃ có sẵn -> chỉ cập nhật hồ sơ + hợp đồng, KHÔNG đụng đến tài
+ *   khoản đăng nhập đã cấp (mật khẩu vẫn giữ nguyên).
  * Khi `fullSync` bật (dùng cho tải file Excel) — coi file là danh sách ĐẦY ĐỦ
  * hiện tại: hợp đồng nào đang có trong hệ thống mà KHÔNG xuất hiện trong
  * lần nhập này sẽ bị XÓA, để danh sách hợp đồng luôn khớp đúng file mới
- * nhất; khách hàng nào sau đó không còn hợp đồng nào và cũng chưa có tài
+ * nhất; khách hàng nào sau đó không còn dư nợ nào và cũng chưa có tài
  * khoản Use thì dọn luôn hồ sơ (xem pruneEmptyCustomerProfiles). Không bật
  * fullSync với kiểu dán tay (chỉ thêm/cập nhật, không xóa/dọn gì).
  */
@@ -461,17 +482,16 @@ export async function importFromPastedTable(text, { fullSync = false } = {}) {
     const cccd = (cccdRaw || '').replace(/\s/g, '');
     if (!cccd || !/^\d{9,12}$/.test(cccd)) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
 
-    let customer = findCustomerByCccd(cccd);
-    if (customer) {
-      result.existingCustomers++; // đã có hồ sơ/tài khoản -> giữ nguyên, không sửa gì
-    } else {
-      const { customer: created } = upsertCustomerProfile({ cccd, name, phone, address });
-      customer = created;
+    const wasNew = !findCustomerByCccd(cccd);
+    const { customer } = upsertCustomerProfile({ cccd, name, phone, address }); // luôn ghi đè hồ sơ theo dữ liệu mới nhất
+    if (wasNew) {
       result.newProfiles++;
       const temp = genTempPassword();
       const cred = await makeCredential(temp);
       Object.assign(customer, cred, { mustChangePassword: true, tempPassword: temp, failedAttempts: 0, lockedUntil: null });
       result.newAccounts.push({ name: customer.name, cccd: customer.cccd, tempPassword: temp });
+    } else {
+      result.existingCustomers++;
     }
 
     const disbursed = parseVNDate(disbursedDate) || new Date().toISOString().slice(0, 10);
