@@ -8,6 +8,7 @@ import * as Dashboard from './views/dashboard.js';
 import * as ContractDetail from './views/contractDetail.js';
 import * as RequestForm from './views/requestForm.js';
 import * as Account from './views/account.js';
+import * as ChangePasswordSelf from './views/changePasswordSelf.js';
 import * as AdminOverview from './views/admin/overview.js';
 import * as AdminCustomers from './views/admin/customers.js';
 import * as AdminRequests from './views/admin/requests.js';
@@ -19,6 +20,7 @@ const customerRoutes = [
   { re: /^#\/hop-dong\/([^/]+)$/, view: ContractDetail, params: ['id'] },
   { re: /^#\/yeu-cau-tu-van$/, view: RequestForm },
   { re: /^#\/tai-khoan$/, view: Account },
+  { re: /^#\/doi-mat-khau$/, view: ChangePasswordSelf },
 ];
 const adminRoutes = [
   { re: /^#\/admin$/, view: AdminOverview },
@@ -26,6 +28,7 @@ const adminRoutes = [
   { re: /^#\/admin\/yeu-cau$/, view: AdminRequests },
   { re: /^#\/admin\/cai-dat$/, view: AdminSettings, superOnly: true },
   { re: /^#\/admin\/nhan-vien$/, view: AdminStaff, superOnly: true },
+  { re: /^#\/doi-mat-khau$/, view: ChangePasswordSelf },
 ];
 
 let root;

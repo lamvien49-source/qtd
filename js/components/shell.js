@@ -39,7 +39,8 @@ export function buildShell(root, role, isSuper) {
           </div>
         </div>
         <nav class="sidebar-nav" id="sidebar-nav"></nav>
-        <button class="btn btn-outline btn-block" id="btn-logout-side" style="margin-top:16px">${icon('logout', 'icon-sm')} Đăng xuất</button>
+        <a href="#/doi-mat-khau" class="btn btn-outline btn-block" style="margin-top:16px">${icon('lock', 'icon-sm')} Đổi mật khẩu</a>
+        <button class="btn btn-outline btn-block" id="btn-logout-side" style="margin-top:8px">${icon('logout', 'icon-sm')} Đăng xuất</button>
       </aside>
       <div class="main-col">
         <header class="app-header" id="app-header"></header>
@@ -59,22 +60,20 @@ function renderSidebarNav(nav) {
   el.innerHTML = nav.map((item) => `<a href="${item.path}" data-path="${item.path}">${icon(item.icon)}<span>${item.label}</span></a>`).join('');
 }
 
+const CHANGE_PW_ITEM = { path: '#/doi-mat-khau', label: 'Đổi mật khẩu', icon: 'lock' };
+
 function renderBottomNav(nav) {
   const el = document.getElementById('bottom-nav');
   const direct = nav.slice(0, BOTTOM_NAV_MAX_DIRECT);
-  const overflow = nav.slice(BOTTOM_NAV_MAX_DIRECT);
-  // Còn dư mục thì gộp vào "Thêm" (kèm Đăng xuất); vừa đủ 1 hàng thì Đăng xuất hiện thẳng luôn.
+  const overflow = [...nav.slice(BOTTOM_NAV_MAX_DIRECT), CHANGE_PW_ITEM];
+  // Luôn còn ít nhất "Đổi mật khẩu" trong "Thêm" nên nút Thêm luôn hiện trên mobile.
   el.innerHTML = direct.map((item) => `<a href="${item.path}" data-path="${item.path}">${icon(item.icon)}<span>${item.shortLabel || item.label}</span></a>`).join('')
-    + (overflow.length
-      ? `<button class="more-btn" id="btn-more-bottom">${icon('more')}<span>Thêm</span></button>`
-      : `<button class="more-btn" id="btn-logout-bottom">${icon('logout')}<span>Đăng xuất</span></button>`);
+    + `<button class="more-btn" id="btn-more-bottom">${icon('more')}<span>Thêm</span></button>`;
   const moreBtn = document.getElementById('btn-more-bottom');
   if (moreBtn) moreBtn.addEventListener('click', () => openMoreSheet(overflow));
-  const logoutBtn = document.getElementById('btn-logout-bottom');
-  if (logoutBtn) logoutBtn.addEventListener('click', onLogoutClick);
 }
 
-/** Bảng "Thêm" — gộp các mục menu còn lại (nếu có) + Đăng xuất, tránh nhồi quá nhiều mục vào 1 hàng menu. */
+/** Bảng "Thêm" — gộp các mục menu còn lại + Đổi mật khẩu + Đăng xuất, tránh nhồi quá nhiều mục vào 1 hàng menu. */
 function openMoreSheet(overflowItems) {
   openModal({
     title: 'Thêm',

@@ -39,15 +39,6 @@ export function render(contentEl) {
     </div>
 
     <div class="card card-pad mb-16">
-      <div class="section-head"><h2>Mặc định cho hợp đồng khi nhập liệu</h2></div>
-      <p class="text-sm text-muted mb-8">Dùng khi nhập từ Excel mà dòng dữ liệu không có sẵn lãi suất riêng cho khoản vay đó.</p>
-      <form id="default-form">
-        <div class="field"><label>Lãi suất mặc định (%/năm)</label><input name="defaultInterestRate" type="number" min="0" step="0.1" value="${org.defaultInterestRate}"/></div>
-        <button class="btn btn-primary btn-block" type="submit">Lưu mặc định</button>
-      </form>
-    </div>
-
-    <div class="card card-pad mb-16">
       <div class="section-head"><h2>Banner trang chủ khách hàng</h2></div>
       <form id="banner-form">
         <div class="field">
@@ -93,13 +84,6 @@ export function render(contentEl) {
       bankAccountNo: fd.get('bankAccountNo').trim(), bankAccountName: fd.get('bankAccountName').trim(),
     });
     toast('Đã lưu thông tin nhận thanh toán', 'success');
-  });
-
-  contentEl.querySelector('#default-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const fd = new FormData(e.target);
-    S.updateOrg({ defaultInterestRate: Number(fd.get('defaultInterestRate')) || 0 });
-    toast('Đã lưu mặc định hợp đồng', 'success');
   });
 
   contentEl.querySelector('#banner-form').addEventListener('submit', (e) => {

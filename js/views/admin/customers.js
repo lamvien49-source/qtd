@@ -178,47 +178,52 @@ export function render(contentEl, filterEl) {
 function openCustomerForm(customer) {
   const isEdit = !!customer;
   const close = openModal({
-    title: isEdit ? 'Sửa khách hàng' : 'Thêm khách hàng',
+    title: isEdit ? 'Sửa khách hàng' : 'Tạo tài khoản khách hàng',
     bodyHtml: `
       <form id="cf">
         <div class="field"><label>Số CCCD</label><input name="cccd" required pattern="\\d{9,12}" value="${customer ? customer.cccd : ''}" ${isEdit ? 'readonly' : ''}/></div>
-        <div class="field"><label>Họ tên</label><input name="name" required value="${customer ? esc(customer.name) : ''}"/></div>
+        <div class="field"><label>Họ tên</label><input name="name" ${isEdit ? 'required' : ''} value="${customer ? esc(customer.name) : ''}"/></div>
         <div class="field">
           <label>Số điện thoại</label>
           <input name="phone" value="${customer ? esc(customer.phone) : ''}"/>
           <div class="field-hint">Khách hàng đăng nhập được bằng CCCD hoặc số điện thoại này — nên nhập cả 2 để khách dùng số nào cũng tra được đúng hợp đồng.</div>
         </div>
+        ${isEdit ? `
         <div class="field">
           <label>Địa chỉ</label>
-          <input name="address" value="${customer ? esc(customer.address) : ''}" placeholder="VD: Xóm 01, thôn Bình Nguyên, xã Bình Sơn, tỉnh Quảng Ngãi"/>
+          <input name="address" value="${esc(customer.address)}" placeholder="VD: Xóm 01, thôn Bình Nguyên, xã Bình Sơn, tỉnh Quảng Ngãi"/>
           <div class="field-hint">Hệ thống tự tách Xóm/Thôn/Tỉnh theo dấu phẩy để lọc & phân quyền, không cần nhập riêng từng ô.</div>
         </div>
-        ${!isEdit ? `
+        ` : `
         <div class="field">
           <label>Mật khẩu đăng nhập</label>
           <input name="password" placeholder="Để trống sẽ tự sinh mật khẩu"/>
-          <div class="field-hint">Có thể tự đặt mật khẩu ngay ở đây để báo cho khách, hoặc để trống cho hệ thống tự sinh — mật khẩu sẽ hiện ra sau khi lưu để gửi cho khách hàng đăng nhập lần đầu.</div>
+          <div class="field-hint">Để trống thì hệ thống tự sinh mật khẩu ngẫu nhiên, hiện ra sau khi lưu để gửi cho khách. Nếu CCCD này đã có sẵn hợp đồng (nhập từ Excel), tài khoản mới sẽ tự thấy ngay các hợp đồng đó — không cần nhập lại địa chỉ (địa chỉ lấy từ Excel).</div>
         </div>
-        ` : ''}
+        `}
       </form>
     `,
-    footHtml: `<button class="btn btn-primary btn-block" id="save">${isEdit ? 'Lưu' : 'Thêm khách hàng'}</button>`,
+    footHtml: `<button class="btn btn-primary btn-block" id="save">${isEdit ? 'Lưu' : 'Tạo tài khoản'}</button>`,
     onMount(sheet, closeFn) {
       sheet.querySelector('#save').addEventListener('click', async () => {
         const form = sheet.querySelector('#cf');
         if (!form.reportValidity()) return;
         const fd = new FormData(form);
-        const res = await S.upsertCustomer({
-          cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), address: fd.get('address'),
-          password: fd.get('password'),
+        if (isEdit) {
+          S.upsertCustomerProfile({
+            cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), address: fd.get('address'),
+          });
+          closeFn();
+          toast('Đã cập nhật khách hàng', 'success');
+          window.__qtdRedrawCustomers && window.__qtdRedrawCustomers();
+          return;
+        }
+        const res = await S.activateCustomerAccount({
+          cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), password: fd.get('password'),
         });
         closeFn();
-        if (res.isNew) {
-          toast('Đã thêm khách hàng mới', 'success');
-          showCredential(res.customer, res.tempPassword);
-        } else {
-          toast('Đã cập nhật khách hàng', 'success');
-        }
+        toast('Đã tạo tài khoản khách hàng', 'success');
+        showCredential(res.customer, res.tempPassword);
         window.__qtdRedrawCustomers && window.__qtdRedrawCustomers();
       });
     },
@@ -386,7 +391,7 @@ function openImportModal() {
         Chọn đúng file Excel sổ theo dõi vay bạn đang dùng (<b>.xls</b> hoặc <b>.xlsx</b>) — có các cột theo đúng thứ tự sau (dòng đầu là tiêu đề sẽ tự bỏ qua):<br/>
         <b>${REQUIRED_COLUMNS}</b>
       </p>
-      <p class="text-sm text-muted mb-8">Cột nào thiếu dữ liệu ở 1 dòng vẫn nhập được — hệ thống tự tính/tự sinh (mã hợp đồng, ngày đến hạn, lãi suất mặc định...).</p>
+      <p class="text-sm text-muted mb-8">Cột nào thiếu dữ liệu ở 1 dòng vẫn nhập được — hệ thống tự tính/tự sinh (mã hợp đồng, ngày đến hạn...). <b class="text-danger">Tải file lên = danh sách hợp đồng đầy đủ hiện tại</b>: hợp đồng nào đang có trong hệ thống mà không còn trong file này sẽ tự động bị xóa để luôn khớp đúng file mới nhất. Nhập từ Excel <b>không tạo tài khoản đăng nhập</b> — chỉ cập nhật hợp đồng; tạo tài khoản riêng ở nút "Tạo User"/"Tạo tài khoản khách hàng".</p>
       <div class="field">
         <input type="file" id="file-input" accept=".xls,.xlsx"/>
         <div class="field-hint">Đọc trực tiếp trong trình duyệt, hỗ trợ cả file .xls (Excel 97-2003) lẫn .xlsx — không cần chuyển đổi định dạng trước, không cần thư viện ngoài.</div>
@@ -394,23 +399,22 @@ function openImportModal() {
       <div id="import-result"></div>
       <details class="mt-16">
         <summary class="text-sm fw-700" style="cursor:pointer">Hoặc dán dữ liệu thủ công (copy từ Excel)</summary>
+        <div class="field-hint mb-8">Dán tay chỉ thêm/cập nhật — KHÔNG xóa hợp đồng nào khác, khác với tải file.</div>
         <div class="field mt-8"><textarea id="paste-area" rows="6" placeholder="Dán dữ liệu vào đây..." style="width:100%;border:1px solid var(--border-strong);border-radius:8px;padding:10px;font-size:13px;font-family:monospace"></textarea></div>
         <button class="btn btn-outline btn-block" id="do-paste-import">${icon('paperclip', 'icon-sm')} Nhập từ dữ liệu đã dán</button>
       </details>
     `,
     onMount(sheet, closeFn) {
       const resultEl = sheet.querySelector('#import-result');
-      const runImport = async (tsvText) => {
+      const runImport = async (tsvText, fullSync) => {
         if (!tsvText.trim()) { toast('Không có dữ liệu để nhập', 'error'); return; }
         try {
-          const res = await S.importFromPastedTable(tsvText);
+          const res = await S.importFromPastedTable(tsvText, { fullSync });
           resultEl.innerHTML = `
             <div class="card card-pad mt-16" style="background:var(--surface-alt)">
-              <div class="text-sm mb-8">✅ ${res.createdCustomers.length} khách hàng mới · ${res.updatedCustomers} khách đã cập nhật · ${res.contracts} hợp đồng</div>
-              ${res.createdCustomers.length ? `
-                <div class="fw-700 text-sm mb-6">Tài khoản mới tạo (gửi cho khách hàng):</div>
-                ${res.createdCustomers.map((c) => `<div class="oc-line"><span>${c.name} (${c.cccd})</span><b>${c.tempPassword}</b></div>`).join('')}
-              ` : ''}
+              <div class="text-sm mb-8">✅ ${res.newProfiles} khách hàng mới · ${res.updatedProfiles} khách đã cập nhật · ${res.contracts} hợp đồng</div>
+              ${res.deletedContracts ? `<div class="text-sm mb-8" style="color:var(--warning)">${icon('alert', 'icon-sm')} Đã xóa ${res.deletedContracts} hợp đồng không còn trong file này</div>` : ''}
+              <div class="field-hint">Khách hàng mới nhập từ đây chưa có tài khoản đăng nhập — vào "Tạo User" để cấp tài khoản khi cần.</div>
               ${res.errors.length ? `<div class="text-sm text-danger mt-8">${res.errors.slice(0, 5).join('<br/>')}</div>` : ''}
             </div>
           `;
@@ -426,13 +430,13 @@ function openImportModal() {
         if (!file) return;
         try {
           const rows = await readExcelFirstSheet(file);
-          await runImport(rowsToTsv(rows));
+          await runImport(rowsToTsv(rows), true);
         } catch (err) {
           toast('Không đọc được file: ' + (err.message || ''), 'error');
         }
       });
       sheet.querySelector('#do-paste-import').addEventListener('click', () => {
-        runImport(sheet.querySelector('#paste-area').value);
+        runImport(sheet.querySelector('#paste-area').value, false);
       });
     },
   });

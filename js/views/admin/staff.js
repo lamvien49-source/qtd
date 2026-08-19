@@ -236,16 +236,11 @@ function openCreateUserModal(tree, contentEl) {
               <div class="field-hint">User đăng nhập được bằng CCCD hoặc SĐT này — nên nhập cả 2.</div>
             </div>
             <div class="field">
-              <label>Địa chỉ</label>
-              <input name="address" placeholder="VD: Xóm 01, thôn Bình Nguyên, xã Bình Sơn, tỉnh Quảng Ngãi"/>
-              <div class="field-hint">Hệ thống tự tách Xóm/Thôn/Tỉnh theo dấu phẩy.</div>
-            </div>
-            <div class="field">
               <label>Mật khẩu đăng nhập</label>
               <input name="password" placeholder="Để trống sẽ tự sinh mật khẩu"/>
               <div class="field-hint">Đây là mật khẩu để User đăng nhập lần đầu — có thể tự đặt hoặc để trống cho hệ thống tự sinh, hiện ra sau khi lưu để gửi cho khách.</div>
             </div>
-            <div class="field-hint mb-8">User chỉ xem được hợp đồng của mình (nhập qua Excel) — không có mục phân quyền.</div>
+            <div class="field-hint mb-8">Sau khi tạo, User đăng nhập được ngay và tự động thấy các hợp đồng khớp CCCD (nhập từ Excel) — không cần nhập lại địa chỉ.</div>
           </form>
           ` : `
           <form id="admin-form">
@@ -283,10 +278,10 @@ function openCreateUserModal(tree, contentEl) {
           const form = sheet.querySelector('#use-form');
           if (!form.reportValidity()) return;
           const fd = new FormData(form);
-          const res = await S.upsertCustomer({ cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), address: fd.get('address'), password: fd.get('password') });
+          const res = await S.activateCustomerAccount({ cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), password: fd.get('password') });
           closeFn();
-          toast(res.isNew ? 'Đã tạo User mới' : 'Đã cập nhật User', 'success');
-          if (res.isNew) showCredential('Đã tạo User', res.customer.cccd, res.tempPassword);
+          toast('Đã tạo User mới', 'success');
+          showCredential('Đã tạo User', res.customer.cccd, res.tempPassword);
           draw(contentEl);
         } else {
           const form = sheet.querySelector('#admin-form');

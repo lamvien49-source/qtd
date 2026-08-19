@@ -192,6 +192,7 @@ export function accruedInterest(contract, asOf = new Date()) {
 export async function loginCustomer(identifier, password) {
   const c = findCustomerByIdentifier(identifier);
   if (!c) return { ok: false, reason: 'Không tìm thấy tài khoản với số CCCD/số điện thoại này.' };
+  if (!c.salt || !c.hash) return { ok: false, reason: 'CCCD/SĐT này chưa được cấp tài khoản đăng nhập — liên hệ quỹ tín dụng để được tạo tài khoản.' };
   if (c.lockedUntil && c.lockedUntil > Date.now()) {
     const mins = Math.ceil((c.lockedUntil - Date.now()) / 60000);
     return { ok: false, reason: `Tài khoản tạm khóa do nhập sai nhiều lần. Thử lại sau ${mins} phút.` };
@@ -212,6 +213,13 @@ export async function loginCustomer(identifier, password) {
   return { ok: true, customerId: c.id, mustChangePassword: !!c.mustChangePassword };
 }
 
+/** Kiểm tra mật khẩu hiện tại của khách hàng — dùng cho màn tự đổi mật khẩu. */
+export async function verifyCustomerPassword(customerId, password) {
+  const c = getCustomer(customerId);
+  if (!c || !c.salt || !c.hash) return false;
+  return verifyCredential(password, c.salt, c.hash);
+}
+
 export async function setCustomerPassword(customerId, newPassword, opts = {}) {
   const c = getCustomer(customerId);
   if (!c) return;
@@ -229,7 +237,15 @@ export async function adminResetCustomerPassword(customerId) {
   return temp;
 }
 
-export async function upsertCustomer({ cccd, name, phone, address, password }) {
+/**
+ * Tạo/cập nhật HỒ SƠ khách hàng (tên, SĐT, địa chỉ) — KHÔNG đụng đến tài
+ * khoản đăng nhập. Dùng cho luồng nhập từ Excel: file chỉ cho biết ai đang
+ * có khoản vay, không phải là nơi cấp tài khoản. Nếu khách chưa từng được
+ * "Tạo User" thì hồ sơ này chưa đăng nhập được (salt/hash rỗng) — vẫn xem
+ * là 1 khách hàng hợp lệ để gắn hợp đồng vào, admin có thể tạo tài khoản
+ * cho họ sau bất cứ lúc nào qua nút "Tạo User" (không mất dữ liệu hợp đồng).
+ */
+export function upsertCustomerProfile({ cccd, name, phone, address }) {
   const parsed = address != null ? parseAddress(address) : null;
   const phoneClean = phone != null ? String(phone).replace(/\s/g, '') : phone;
   let c = findCustomerByCccd(cccd);
@@ -238,19 +254,47 @@ export async function upsertCustomer({ cccd, name, phone, address, password }) {
     c.phone = phoneClean || c.phone;
     if (address) { c.address = address; Object.assign(c, parsed); }
     notify();
-    return { customer: c, isNew: false, tempPassword: null };
+    return { customer: c, isNew: false };
   }
-  const temp = password && password.trim() ? password.trim() : genTempPassword();
-  const cred = await makeCredential(temp);
   c = {
-    id: genId('cust'), cccd: String(cccd).trim(), name, phone: phoneClean || '',
+    id: genId('cust'), cccd: String(cccd).trim(), name: name || '', phone: phoneClean || '',
     address: address || '', ...(parsed || { xom: '', thon: '', xa: '', tinh: '' }),
-    salt: cred.salt, hash: cred.hash, mustChangePassword: true, tempPassword: temp,
+    salt: null, hash: null, mustChangePassword: false, tempPassword: null,
     failedAttempts: 0, lockedUntil: null, createdAt: new Date().toISOString(),
   };
   state.customers.push(c);
   notify();
-  return { customer: c, isNew: true, tempPassword: temp };
+  return { customer: c, isNew: true };
+}
+
+/**
+ * "Tạo User" — cấp tài khoản đăng nhập (CCCD + mật khẩu) cho 1 khách hàng.
+ * Nếu CCCD đã có hồ sơ sẵn (từ Excel) thì chỉ gắn thêm tài khoản vào đúng
+ * hồ sơ đó (giữ nguyên tên/địa chỉ/hợp đồng đã có) — khách đăng nhập là tự
+ * thấy ngay mọi hợp đồng khớp CCCD, không cần làm gì thêm. Nếu CCCD chưa có
+ * hồ sơ nào thì tạo mới (chỉ cần CCCD, tên tùy chọn — không cần địa chỉ).
+ */
+export async function activateCustomerAccount({ cccd, name, phone, password }) {
+  const cccdTrim = String(cccd || '').trim();
+  if (!cccdTrim) throw new Error('Cần nhập số CCCD');
+  const phoneClean = phone ? String(phone).replace(/\s/g, '') : '';
+  const finalPassword = password && password.trim() ? password.trim() : genTempPassword();
+  const cred = await makeCredential(finalPassword);
+  let c = findCustomerByCccd(cccdTrim);
+  if (c) {
+    if (name) c.name = name;
+    if (phoneClean) c.phone = phoneClean;
+  } else {
+    c = {
+      id: genId('cust'), cccd: cccdTrim, name: name || cccdTrim, phone: phoneClean,
+      address: '', xom: '', thon: '', xa: '', tinh: '',
+      failedAttempts: 0, lockedUntil: null, createdAt: new Date().toISOString(),
+    };
+    state.customers.push(c);
+  }
+  Object.assign(c, cred, { mustChangePassword: true, tempPassword: finalPassword, failedAttempts: 0, lockedUntil: null });
+  notify();
+  return { customer: c, tempPassword: finalPassword };
 }
 
 /** Danh sách các Thôn / Xóm đang có trong dữ liệu khách hàng (dùng để lọc & gán quyền). */
@@ -284,7 +328,7 @@ export function upsertContract({ customerId, code, principal, disbursedDate, due
     principal: principal != null && principal !== '' ? Number(principal) || 0 : bal, // mặc định = dư nợ nếu không có số tiền vay gốc
     disbursedDate,
     dueDate: dueDate || addDays(new Date(disbursedDate), 365).toISOString().slice(0, 10), // mặc định 1 năm nếu Excel không có
-    interestRate: interestRate != null && interestRate !== '' ? Number(interestRate) || 0 : (state.org.defaultInterestRate || 0),
+    interestRate: interestRate != null && interestRate !== '' ? Number(interestRate) || 0 : (ct ? ct.interestRate : 0),
     balance: bal, status: status || 'dang_vay',
     interestPaidUntil: interestPaidUntil || disbursedDate,
   };
@@ -341,9 +385,18 @@ export function parseVNDate(str) {
 }
 
 const HEADER_HINTS = ['cccd', 'cmnd', 'người nhận nợ', 'nguoi nhan no', 'họ tên', 'ho ten', 'số hđtd', 'so hdtd'];
-export async function importFromPastedTable(text) {
+/**
+ * Nhập dữ liệu hợp đồng từ Excel/dữ liệu dán — chỉ tạo/cập nhật HỒ SƠ khách
+ * hàng (không cấp tài khoản đăng nhập, xem upsertCustomerProfile). Khi
+ * `fullSync` bật (dùng cho tải file Excel) — coi file là danh sách ĐẦY ĐỦ
+ * hiện tại: hợp đồng nào đang có trong hệ thống mà KHÔNG xuất hiện trong
+ * lần nhập này sẽ bị XÓA, để danh sách hợp đồng luôn khớp đúng file mới
+ * nhất. Không bật với kiểu dán tay (chỉ thêm/cập nhật, không xóa gì).
+ */
+export async function importFromPastedTable(text, { fullSync = false } = {}) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const result = { createdCustomers: [], updatedCustomers: 0, contracts: 0, skipped: 0, errors: [] };
+  const result = { newProfiles: 0, updatedProfiles: 0, contracts: 0, deletedContracts: 0, skipped: 0, errors: [] };
+  const touchedContractIds = new Set();
   for (const line of lines) {
     const cells = line.includes('\t') ? line.split('\t') : line.split(',');
     if (cells.length < 2) { result.skipped++; continue; }
@@ -354,12 +407,11 @@ export async function importFromPastedTable(text) {
     const cccd = (cccdRaw || '').replace(/\s/g, '');
     if (!cccd || !/^\d{9,12}$/.test(cccd)) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
 
-    const { customer, isNew, tempPassword } = await upsertCustomer({ cccd, name, phone, address });
-    if (isNew) result.createdCustomers.push({ cccd: customer.cccd, name: customer.name, tempPassword });
-    else result.updatedCustomers++;
+    const { customer, isNew } = upsertCustomerProfile({ cccd, name, phone, address });
+    if (isNew) result.newProfiles++; else result.updatedProfiles++;
 
     const disbursed = parseVNDate(disbursedDate) || new Date().toISOString().slice(0, 10);
-    upsertContract({
+    const ct = upsertContract({
       customerId: customer.id, code: code || null,
       principal: principal ? parseVNNumber(principal) : null, disbursedDate: disbursed,
       dueDate: dueDate ? parseVNDate(dueDate) : null,
@@ -367,7 +419,14 @@ export async function importFromPastedTable(text) {
       balance: parseVNNumber(balance), status: 'dang_vay',
       interestPaidUntil: parseVNDate(interestPaidUntil) || disbursed,
     });
+    touchedContractIds.add(ct.id);
     result.contracts++;
+  }
+  if (fullSync) {
+    const before = state.contracts.length;
+    state.contracts = state.contracts.filter((ct) => touchedContractIds.has(ct.id));
+    result.deletedContracts = before - state.contracts.length;
+    notify();
   }
   return result;
 }
@@ -426,6 +485,22 @@ export async function resetStaffPassword(id) {
   a.hash = cred.hash;
   notify();
   return temp;
+}
+/** Kiểm tra mật khẩu hiện tại của quản trị viên/nhân viên — dùng cho màn tự đổi mật khẩu. */
+export async function verifyAdminPassword(id, password) {
+  const a = getAdmin(id);
+  if (!a || !a.salt || !a.hash) return false;
+  return verifyCredential(password, a.salt, a.hash);
+}
+
+/** Tự đổi mật khẩu (Quản trị viên/nhân viên tự đặt mật khẩu mới cho chính mình). */
+export async function setStaffPassword(id, newPassword) {
+  const a = getAdmin(id);
+  if (!a) throw new Error('Không tìm thấy tài khoản');
+  const cred = await makeCredential(newPassword);
+  a.salt = cred.salt;
+  a.hash = cred.hash;
+  notify();
 }
 export function deleteStaffAdmin(id) {
   const a = getAdmin(id);
@@ -487,8 +562,6 @@ async function seedDemoData() {
     bankName: 'Ngân hàng Hợp tác xã Việt Nam (Co-op Bank)',
     bankAccountNo: '5200000000825012',
     bankAccountName: 'QUY TIN DUNG NHAN DAN BINH NGUYEN',
-    // Dùng khi file/dữ liệu nhập vào không có sẵn lãi suất riêng cho từng hợp đồng
-    defaultInterestRate: 9,
   };
 
   const adminCred = await makeCredential('Admin@123');

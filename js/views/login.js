@@ -61,28 +61,40 @@ export function renderLogin(root, onLoggedIn) {
     const fd = new FormData(e.target);
     const primary = fd.get('primary').trim();
     const password = fd.get('password');
-    const errEl = root.querySelector('#login-error');
-    errEl.style.display = 'none';
+    root.querySelector('#login-error').style.display = 'none';
 
     const submitBtn = e.target.querySelector('button[type="submit"]');
     submitBtn.disabled = true;
 
+    // Đăng nhập khách hàng sai mật khẩu sẽ gọi notify() (để lưu số lần nhập sai) —
+    // notify() kích hoạt render lại toàn bộ màn hình đăng nhập, xóa mất các phần tử
+    // DOM đã lấy ở trên. Vì vậy sau khi await xong phải lấy lại #login-error/nút bấm
+    // MỚI từ `root` (chỉ `root` là còn nguyên) thay vì dùng lại tham chiếu cũ.
     try {
       if (mode === 'admin') {
         const res = await S.loginAdmin(primary, password);
-        if (!res.ok) { errEl.textContent = res.reason; errEl.style.display = 'block'; return; }
+        if (!res.ok) {
+          const err = root.querySelector('#login-error');
+          if (err) { err.textContent = res.reason; err.style.display = 'block'; }
+          return;
+        }
         S.setSession({ role: 'admin', id: res.adminId });
         toast('Đăng nhập thành công', 'success');
         onLoggedIn();
       } else {
         const res = await S.loginCustomer(primary, password);
-        if (!res.ok) { errEl.textContent = res.reason; errEl.style.display = 'block'; return; }
+        if (!res.ok) {
+          const err = root.querySelector('#login-error');
+          if (err) { err.textContent = res.reason; err.style.display = 'block'; }
+          return;
+        }
         S.setSession({ role: 'customer', id: res.customerId, mustChangePassword: res.mustChangePassword });
         toast('Đăng nhập thành công', 'success');
         onLoggedIn();
       }
     } finally {
-      submitBtn.disabled = false;
+      const btn = root.querySelector('#login-form button[type="submit"]');
+      if (btn) btn.disabled = false;
     }
   });
 }
