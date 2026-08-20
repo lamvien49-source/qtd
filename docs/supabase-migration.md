@@ -68,6 +68,7 @@ create table customers (
   address text,
   thon text,
   xom text,
+  xa text,
   tinh text,
   salt text,
   hash text,

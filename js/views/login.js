@@ -88,7 +88,7 @@ export function renderLogin(root, onLoggedIn) {
           if (err) { err.textContent = res.reason; err.style.display = 'block'; }
           return;
         }
-        S.setSession({ role: 'customer', id: res.customerId, mustChangePassword: res.mustChangePassword });
+        S.setSession({ role: 'customer', id: res.customerId, mustChangePassword: res.mustChangePassword, sbToken: res.sbToken });
         toast('Đăng nhập thành công', 'success');
         onLoggedIn();
       }

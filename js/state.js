@@ -5,6 +5,7 @@
 // Toàn bộ dữ liệu khách hàng trong file này là dữ liệu GIẢ.
 // ============================================================
 import { genId, mulberry32, randInt, addDays, daysBetween } from './utils.js';
+import { getSupabaseClient, callLoginFunction } from './lib/supabaseClient.js';
 
 export const STORAGE_KEY = 'qtd_demo_v3';
 
@@ -216,29 +217,59 @@ export function accruedInterest(contract, asOf = new Date()) {
   return Math.round(raw / 1000) * 1000;
 }
 
-/** Đăng nhập khách hàng bằng CCCD HOẶC số điện thoại + mật khẩu. */
+/**
+ * Đăng nhập khách hàng bằng CCCD HOẶC số điện thoại + mật khẩu.
+ * ĐÃ CHUYỂN SANG SUPABASE THẬT (xem docs/supabase-migration.md) — không còn
+ * kiểm tra mật khẩu ở đây nữa, mà gọi Edge Function "login" (chạy phía
+ * server, an toàn dù chưa có OTP). Đúng mật khẩu thì tải luôn hồ sơ + toàn
+ * bộ hợp đồng của khách đó từ Supabase vào state (THAY HẲN dữ liệu demo cũ)
+ * để các màn hình khác (dashboard, chi tiết hợp đồng...) dùng lại y nguyên,
+ * không cần sửa gì thêm. Vé (JWT) trả về trong "sbToken" — nơi gọi hàm này
+ * (login.js) cần lưu vào session để dùng cho các lần gọi Supabase sau.
+ *
+ * LƯU Ý (giai đoạn chuyển tiếp): mới migrate riêng phần đăng nhập + xem hợp
+ * đồng của khách hàng. Đăng nhập quản trị viên/nhân viên, yêu cầu tư vấn,
+ * và mọi thao tác ghi khác VẪN đang chạy trên dữ liệu demo cục bộ như cũ —
+ * sẽ chuyển tiếp ở các bước sau.
+ */
 export async function loginCustomer(identifier, password) {
-  const c = findCustomerByIdentifier(identifier);
-  if (!c) return { ok: false, reason: 'Không tìm thấy tài khoản với số CCCD/số điện thoại này.' };
-  if (!c.salt || !c.hash) return { ok: false, reason: 'CCCD/SĐT này chưa được cấp tài khoản đăng nhập — liên hệ quỹ tín dụng để được tạo tài khoản.' };
-  if (c.lockedUntil && c.lockedUntil > Date.now()) {
-    const mins = Math.ceil((c.lockedUntil - Date.now()) / 60000);
-    return { ok: false, reason: `Tài khoản tạm khóa do nhập sai nhiều lần. Thử lại sau ${mins} phút.` };
-  }
-  const ok = await verifyCredential(password, c.salt, c.hash);
-  if (!ok) {
-    c.failedAttempts = (c.failedAttempts || 0) + 1;
-    if (c.failedAttempts >= LOCK_AFTER_FAILS) {
-      c.lockedUntil = Date.now() + LOCK_MINUTES * 60000;
-      c.failedAttempts = 0;
-    }
-    notify();
-    return { ok: false, reason: 'Số CCCD/số điện thoại hoặc mật khẩu không đúng.' };
-  }
-  c.failedAttempts = 0;
-  c.lockedUntil = null;
-  notify();
-  return { ok: true, customerId: c.id, mustChangePassword: !!c.mustChangePassword };
+  const res = await callLoginFunction({ role: 'customer', identifier, password });
+  if (!res.ok) return { ok: false, reason: res.reason };
+  await loadCustomerSessionData(res.id, res.token);
+  return { ok: true, customerId: res.id, mustChangePassword: !!res.mustChangePassword, sbToken: res.token };
+}
+
+/** Tải hồ sơ + toàn bộ hợp đồng của 1 khách hàng từ Supabase, thay hoàn toàn state.customers/state.contracts. */
+async function loadCustomerSessionData(customerId, token) {
+  const sb = getSupabaseClient(token);
+  const [{ data: custRow }, { data: contractRows }] = await Promise.all([
+    sb.from('customers').select('*').eq('id', customerId).maybeSingle(),
+    sb.from('contracts').select('*').eq('customer_id', customerId),
+  ]);
+  state.customers = custRow ? [mapCustomerRow(custRow)] : [];
+  state.contracts = (contractRows || []).map(mapContractRow);
+}
+
+/** snake_case (cột Postgres) -> camelCase (đúng field app đang dùng khắp nơi). */
+function mapCustomerRow(row) {
+  return {
+    id: row.id, cccd: row.cccd, name: row.name, phone: row.phone || '', address: row.address || '',
+    thon: row.thon || '', xom: row.xom || '', xa: row.xa || '', tinh: row.tinh || '',
+    salt: row.salt, hash: row.hash,
+    mustChangePassword: !!row.must_change_password,
+    failedAttempts: row.failed_attempts || 0,
+    lockedUntil: row.locked_until ? new Date(row.locked_until).getTime() : null,
+    createdAt: row.created_at,
+  };
+}
+function mapContractRow(row) {
+  return {
+    id: row.id, customerId: row.customer_id, code: row.code,
+    principal: Number(row.principal), balance: Number(row.balance),
+    disbursedDate: row.disbursed_date, dueDate: row.due_date,
+    interestRate: Number(row.interest_rate),
+    interestPaidUntil: row.interest_paid_until,
+  };
 }
 
 /** Kiểm tra mật khẩu hiện tại của khách hàng — dùng cho màn tự đổi mật khẩu. */
