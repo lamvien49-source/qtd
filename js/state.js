@@ -5,7 +5,7 @@
 // Toàn bộ dữ liệu khách hàng trong file này là dữ liệu GIẢ.
 // ============================================================
 import { genId, mulberry32, randInt, addDays, daysBetween } from './utils.js';
-import { getSupabaseClient, callLoginFunction } from './lib/supabaseClient.js';
+import { getSupabaseClient, callLoginFunction, callCreateAccountFunction } from './lib/supabaseClient.js';
 
 export const STORAGE_KEY = 'qtd_demo_v3';
 
@@ -343,28 +343,23 @@ export function upsertCustomerProfile(args) {
  * thấy ngay mọi hợp đồng khớp CCCD, không cần làm gì thêm. Nếu CCCD chưa có
  * hồ sơ nào thì tạo mới (chỉ cần CCCD, tên tùy chọn — không cần địa chỉ).
  */
+/**
+ * Tạo tài khoản đăng nhập cho khách hàng — ĐÃ CHUYỂN SANG SUPABASE THẬT,
+ * gọi Edge Function "create-account" (chỉ admin role='super' gọi được,
+ * xác minh ngay tại server — xem docs/supabase-migration.md mục 5). Tạo
+ * xong tải lại đúng dòng khách hàng đó từ Supabase để đồng bộ vào state.
+ */
 export async function activateCustomerAccount({ cccd, name, phone, password }) {
-  const cccdTrim = String(cccd || '').trim();
-  if (!cccdTrim) throw new Error('Cần nhập số CCCD');
-  let c = findCustomerByCccd(cccdTrim);
-  if (c && c.salt && c.hash) throw new Error('Số CCCD này đã có tài khoản Use rồi — dùng "Cấp lại mật khẩu" nếu cần đặt lại.');
-  const phoneClean = phone ? String(phone).replace(/\s/g, '') : '';
-  const finalPassword = password && password.trim() ? password.trim() : genTempPassword();
-  const cred = await makeCredential(finalPassword);
-  if (c) {
-    if (name) c.name = name;
-    if (phoneClean) c.phone = phoneClean;
-  } else {
-    c = {
-      id: genId('cust'), cccd: cccdTrim, name: name || cccdTrim, phone: phoneClean,
-      address: '', xom: '', thon: '', xa: '', tinh: '',
-      failedAttempts: 0, lockedUntil: null, createdAt: new Date().toISOString(),
-    };
-    state.customers.push(c);
-  }
-  Object.assign(c, cred, { mustChangePassword: true, tempPassword: finalPassword, failedAttempts: 0, lockedUntil: null });
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'customer', cccd, name, phone, password });
+  if (!res.ok) throw new Error(res.reason || 'Không tạo được tài khoản.');
+  const sb = getSupabaseClient(session.sbToken);
+  const { data: row } = await sb.from('customers').select('*').eq('id', res.id).maybeSingle();
+  const customer = row ? mapCustomerRow(row) : { id: res.id, cccd };
+  const idx = state.customers.findIndex((c) => c.id === customer.id);
+  if (idx >= 0) state.customers[idx] = customer; else state.customers.push(customer);
   notify();
-  return { customer: c, tempPassword: finalPassword };
+  return { customer, tempPassword: res.tempPassword };
 }
 
 /**
@@ -635,22 +630,24 @@ export function isSuperAdmin(id) { return getAdmin(id)?.role === 'super'; }
  * (xem trọn cả Thôn, gồm mọi Xóm trong đó) và allowedXom (chỉ xem riêng 1
  * vài Xóm cụ thể dù Thôn chứa nó không được cấp trọn).
  */
+/**
+ * Tạo tài khoản quản trị viên/nhân viên — ĐÃ CHUYỂN SANG SUPABASE THẬT,
+ * cùng cơ chế với activateCustomerAccount() ở trên (qua Edge Function
+ * "create-account", chỉ admin role='super' gọi được).
+ */
 export async function addStaffAdmin({ username, name, password, role, allowedThon, allowedXom }) {
-  const uname = String(username || '').trim();
-  if (!uname) throw new Error('Cần nhập tên đăng nhập');
-  if (state.admins.some((a) => a.username === uname)) throw new Error('Tên đăng nhập đã tồn tại');
-  const finalRole = role === 'super' ? 'super' : 'staff';
-  const finalPassword = password && password.trim() ? password.trim() : genTempPassword();
-  const cred = await makeCredential(finalPassword);
-  const staff = {
-    id: genId('staff'), username: uname, name: name || uname, role: finalRole,
-    allowedThon: finalRole === 'staff' && Array.isArray(allowedThon) ? allowedThon : [],
-    allowedXom: finalRole === 'staff' && Array.isArray(allowedXom) ? allowedXom : [],
-    ...cred, createdAt: new Date().toISOString(),
-  };
-  state.admins.push(staff);
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, {
+    type: 'staff', username, name, password, role, allowedThon, allowedXom,
+  });
+  if (!res.ok) throw new Error(res.reason || 'Không tạo được tài khoản.');
+  const sb = getSupabaseClient(session.sbToken);
+  const { data: row } = await sb.from('admins').select('*').eq('id', res.id).maybeSingle();
+  const staff = row ? mapAdminRow(row) : { id: res.id, username };
+  const idx = state.admins.findIndex((a) => a.id === staff.id);
+  if (idx >= 0) state.admins[idx] = staff; else state.admins.push(staff);
   notify();
-  return { staff, tempPassword: finalPassword };
+  return { staff, tempPassword: res.tempPassword };
 }
 export function updateStaffPermissions(id, allowedThon, allowedXom) {
   const a = getAdmin(id);
