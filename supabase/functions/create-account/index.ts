@@ -456,16 +456,25 @@ Deno.serve(async (req) => {
       result.contracts++;
     }
 
+    // Postgres không cho phép 1 câu lệnh ON CONFLICT DO UPDATE đụng vào CÙNG 1
+    // dòng (cùng id) quá 1 lần — mà 1 khách hàng có thể xuất hiện ở NHIỀU
+    // dòng trong file (nhiều hợp đồng cùng 1 người), nên cùng 1 customer id
+    // có thể bị push vào mảng nhiều lần (mỗi lần đã tự gộp thêm dữ liệu của
+    // dòng đó). Gom trùng theo id trước khi ghi, giữ lại bản CUỐI CÙNG (đã
+    // gộp đủ patch từ mọi dòng liên quan) — dùng Map vì Map giữ đúng thứ tự
+    // chèn, key trùng thì value sau ghi đè value trước.
+    const dedupById = (rows: Record<string, unknown>[]) => [...new Map(rows.map((r) => [r.id as string, r])).values()];
+
     if (newCustomerUpserts.length) {
-      const { error } = await admin.from('customers').upsert(newCustomerUpserts, { onConflict: 'id' });
+      const { error } = await admin.from('customers').upsert(dedupById(newCustomerUpserts), { onConflict: 'id' });
       if (error) result.errors.push('Lỗi ghi hồ sơ khách hàng mới: ' + error.message);
     }
     if (existingCustomerUpserts.length) {
-      const { error } = await admin.from('customers').upsert(existingCustomerUpserts, { onConflict: 'id' });
+      const { error } = await admin.from('customers').upsert(dedupById(existingCustomerUpserts), { onConflict: 'id' });
       if (error) result.errors.push('Lỗi cập nhật hồ sơ khách hàng: ' + error.message);
     }
     if (contractUpserts.length) {
-      const { error } = await admin.from('contracts').upsert(contractUpserts, { onConflict: 'id' });
+      const { error } = await admin.from('contracts').upsert(dedupById(contractUpserts), { onConflict: 'id' });
       if (error) result.errors.push('Lỗi ghi hợp đồng: ' + error.message);
     }
 
