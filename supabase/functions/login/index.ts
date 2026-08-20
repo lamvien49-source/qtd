@@ -86,11 +86,19 @@ Deno.serve(async (req) => {
     // Khách đăng nhập bằng CCCD HOẶC số điện thoại (SĐT có thể gõ có/không dấu cách).
     const noSpace = idTrim.replace(/\s/g, '');
     const { data, error } = await admin.from('customers').select('*');
-    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    if (error) {
+      console.error('query customers error:', error);
+      // TẠM THỜI in chi tiết lỗi thật ra response để chẩn đoán — sẽ bỏ dòng "debug" này
+      // sau khi chạy được, không để lộ chi tiết lỗi hệ thống khi dùng thật.
+      return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.', debug: error }, 500);
+    }
     row = (data || []).find((c) => c.cccd === idTrim || (c.phone && c.phone.replace(/\s/g, '') === noSpace)) || null;
   } else {
     const { data, error } = await admin.from('admins').select('*').eq('username', idTrim).maybeSingle();
-    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    if (error) {
+      console.error('query admins error:', error);
+      return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.', debug: error }, 500);
+    }
     row = data;
   }
 
