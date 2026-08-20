@@ -152,10 +152,15 @@ app bình thường không có gì canh gác. Giải pháp: **giữ nguyên logi
 (CCCD/username + băm SHA-256 có muối, y hệt `js/state.js`), chỉ chuyển chỗ chạy nó ra
 **Supabase Edge Function** (code chạy trên server của Supabase, không phải trong trình duyệt).
 
+> **Cập nhật**: ban đầu tách 3 Edge Function riêng (login/create-account/import-data), sau đó **gộp
+> lại thành 1 function duy nhất** (`supabase/functions/create-account/index.ts`, phân biệt bằng field
+> `type` trong body — `type: 'login'` không cần JWT sẵn có, mọi `type` khác cần JWT admin role=super)
+> để đỡ phải deploy nhiều nơi mỗi lần sửa. Chỉ cần 1 chỗ deploy từ giờ trở đi.
+
 ### Cách hoạt động
 1. Khách/admin gõ CCCD (hoặc SĐT/tên đăng nhập) + mật khẩu trong app như bình thường.
-2. Trình duyệt gọi Edge Function `login` (file `supabase/functions/login/index.ts` trong repo này)
-   — gửi kèm `{ role, identifier, password }`.
+2. Trình duyệt gọi Edge Function (file `supabase/functions/create-account/index.ts` trong repo này)
+   — gửi kèm `{ type: 'login', role, identifier, password }`.
 3. Edge Function dùng `service_role key` (chỉ tồn tại phía server, không lộ ra trình duyệt) tra
    đúng dòng trong `customers`/`admins`, so mật khẩu bằng đúng thuật toán cũ, xử lý khóa tài khoản
    sau nhiều lần sai y hệt logic hiện tại.
@@ -222,18 +227,45 @@ create policy "admin sees contracts in scope" on contracts
 -- Admin/nhân viên xem được danh sách quản trị viên (VD: trang Quản lý User)
 create policy "admin sees admins" on admins
   for select using ((auth.jwt() ->> 'app_role') = 'admin');
-```
-*(Đây mới là ví dụ 3 policy đầu tiên cho bảng `customers`/`contracts` — các bảng còn lại
-(`admins`, `requests`, `orgs`) và các thao tác insert/update/delete sẽ viết tiếp khi làm tới phần
-thay thế từng hàm trong `state.js`, mục 7.)*
 
-### Việc cần bạn làm để deploy Edge Function `login`
-1. Vào Supabase Dashboard → menu ☰ → **Edge Functions** → **New function** → đặt tên đúng là `login`.
-2. Copy toàn bộ nội dung file `supabase/functions/login/index.ts` trong repo này, dán vào — **Deploy**.
+-- Yêu cầu tư vấn/vay mới: khách tự tạo + tự xem của chính mình, KHÔNG qua
+-- Edge Function nào (không nhạy cảm — chỉ cần RLS chặn đúng customer_id là
+-- của chính người gọi, không tin trình duyệt tự khai customer_id khác).
+create policy "customer creates own request" on requests
+  for insert with check (
+    (auth.jwt() ->> 'app_role') = 'customer'
+    and customer_id = (auth.jwt() ->> 'row_id')
+  );
+create policy "customer sees own requests" on requests
+  for select using (
+    (auth.jwt() ->> 'app_role') = 'customer'
+    and customer_id = (auth.jwt() ->> 'row_id')
+  );
+create policy "admin sees requests in scope" on requests
+  for select using (
+    (auth.jwt() ->> 'app_role') = 'admin'
+    and exists (
+      select 1 from customers c
+      join admins a on a.id = (auth.jwt() ->> 'row_id')
+      where c.id = requests.customer_id
+        and (a.role = 'super' or c.thon = any(a.allowed_thon) or c.xom = any(a.allowed_xom))
+    )
+  );
+create policy "admin updates requests" on requests
+  for update using ((auth.jwt() ->> 'app_role') = 'admin');
+```
+*(Bảng `orgs` — cài đặt banner/thông tin ngân hàng — chưa có policy, làm ở đợt sau.)*
+
+### Việc cần bạn làm để deploy Edge Function
+1. Vào Supabase Dashboard → menu ☰ → **Edge Functions** → tạo/mở function (tên gì cũng được, URL
+   thật mới là thứ quan trọng — báo lại cho Claude biết URL thật để cập nhật code app).
+2. Copy toàn bộ nội dung file `supabase/functions/create-account/index.ts` trong repo này, dán vào
+   — **Deploy**.
 3. Vào **Project Settings → API → JWT Settings**, tìm dòng **"JWT Secret"** (hoặc "Legacy JWT
    Secret" nếu project mới hiển thị khác — nếu không thấy chữ nào giống vậy, chụp màn hình gửi tôi,
    Supabase hay đổi giao diện phần này).
-4. Copy giá trị đó → vào **Edge Functions → login → Settings/Secrets** → thêm secret mới, đặt tên
+4. Copy giá trị đó → vào **Edge Functions → Secrets** (dùng chung cho mọi function trong project,
+   không cần thêm lại từng function) → thêm secret mới, đặt tên
    **`CUSTOM_JWT_SECRET`**, dán giá trị vừa copy vào → Save. **Không dán giá trị này vào chat** —
    đây là bí mật thật, khác hẳn URL/anon key.
 5. Chạy đoạn SQL ở mục "RLS policy" trên (SQL Editor như bước tạo bảng) — nhớ **bỏ dòng

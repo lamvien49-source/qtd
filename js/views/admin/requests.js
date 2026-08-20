@@ -50,7 +50,10 @@ export function render(contentEl, filterEl) {
       openPicker({
         title: 'Cập nhật trạng thái', options: S.REQUEST_STATUS.map((s) => ({ value: s.id, label: s.label })),
         selected: null,
-        onSelect: (val) => { S.updateRequestStatus(btn.dataset.update, val); toast('Đã cập nhật trạng thái', 'success'); },
+        onSelect: async (val) => {
+          try { await S.updateRequestStatus(btn.dataset.update, val); toast('Đã cập nhật trạng thái', 'success'); }
+          catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
+        },
       });
     });
   });

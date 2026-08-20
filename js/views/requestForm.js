@@ -61,16 +61,18 @@ export function render(contentEl, filterEl, params, query) {
       opt.addEventListener('click', () => { type = opt.dataset.type; draw(); });
     });
 
-    contentEl.querySelector('#req-form').addEventListener('submit', (e) => {
+    contentEl.querySelector('#req-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      S.createRequest({
-        customerId: customer.id, type,
-        amount: fd.get('amount'), termMonths: fd.get('termMonths'),
-        purpose: fd.get('purpose'), note: fd.get('note'),
-      });
-      toast('Đã gửi yêu cầu, nhân viên sẽ liên hệ với bạn sớm', 'success');
-      draw();
+      try {
+        await S.createRequest({
+          customerId: customer.id, type,
+          amount: fd.get('amount'), termMonths: fd.get('termMonths'),
+          purpose: fd.get('purpose'), note: fd.get('note'),
+        });
+        toast('Đã gửi yêu cầu, nhân viên sẽ liên hệ với bạn sớm', 'success');
+        draw();
+      } catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
     });
   }
   draw();

@@ -242,12 +242,14 @@ export async function loginCustomer(identifier, password) {
 /** Tải hồ sơ + toàn bộ hợp đồng của 1 khách hàng từ Supabase, thay hoàn toàn state.customers/state.contracts. */
 async function loadCustomerSessionData(customerId, token) {
   const sb = getSupabaseClient(token);
-  const [{ data: custRow }, { data: contractRows }] = await Promise.all([
+  const [{ data: custRow }, { data: contractRows }, { data: requestRows }] = await Promise.all([
     sb.from('customers').select('*').eq('id', customerId).maybeSingle(),
     sb.from('contracts').select('*').eq('customer_id', customerId),
+    sb.from('requests').select('*').eq('customer_id', customerId),
   ]);
   state.customers = custRow ? [mapCustomerRow(custRow)] : [];
   state.contracts = (contractRows || []).map(mapContractRow);
+  state.requests = (requestRows || []).map(mapRequestRow);
 }
 
 /** snake_case (cột Postgres) -> camelCase (đúng field app đang dùng khắp nơi). */
@@ -621,14 +623,16 @@ export async function loginAdmin(username, password) {
 
 async function loadAdminSessionData(token) {
   const sb = getSupabaseClient(token);
-  const [{ data: adminRows }, { data: customerRows }, { data: contractRows }] = await Promise.all([
+  const [{ data: adminRows }, { data: customerRows }, { data: contractRows }, { data: requestRows }] = await Promise.all([
     sb.from('admins').select('*'),
     sb.from('customers').select('*'),
     sb.from('contracts').select('*'),
+    sb.from('requests').select('*'),
   ]);
   state.admins = (adminRows || []).map(mapAdminRow);
   state.customers = (customerRows || []).map(mapCustomerRow);
   state.contracts = (contractRows || []).map(mapContractRow);
+  state.requests = (requestRows || []).map(mapRequestRow);
 }
 
 function mapAdminRow(row) {
@@ -728,19 +732,42 @@ export function listRequests(filters = {}) {
   if (filters.status && filters.status !== 'all') list = list.filter((r) => r.status === filters.status);
   return list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 }
-export function createRequest({ customerId, type, amount, purpose, termMonths, note }) {
-  const req = {
-    id: genId('yc'), customerId, type, amount: Number(amount) || 0, purpose: purpose || '',
-    termMonths: Number(termMonths) || null, note: note || '', status: 'moi',
-    createdAt: new Date().toISOString(),
+/**
+ * Khách hàng gửi yêu cầu tư vấn/vay mới — ĐÃ CHUYỂN SANG SUPABASE THẬT, ghi
+ * thẳng qua RLS (không cần Edge Function riêng vì đây không phải hành động
+ * nhạy cảm — RLS đã chặn khách chỉ tạo được yêu cầu cho ĐÚNG chính mình,
+ * xem policy "customer creates own request" trong docs/supabase-migration.md).
+ */
+export async function createRequest({ customerId, type, amount, purpose, termMonths, note }) {
+  const session = getSession();
+  const sb = getSupabaseClient(session?.sbToken);
+  const row = {
+    id: genId('yc'), customer_id: customerId, type, amount: Number(amount) || 0, purpose: purpose || '',
+    term_months: Number(termMonths) || null, note: note || '', status: 'moi',
   };
+  const { error } = await sb.from('requests').insert(row);
+  if (error) throw new Error('Không gửi được yêu cầu, thử lại sau.');
+  const req = mapRequestRow({ ...row, created_at: new Date().toISOString() });
   state.requests.push(req);
   notify();
   return req;
 }
-export function updateRequestStatus(id, status) {
+/** Admin cập nhật trạng thái yêu cầu — ĐÃ CHUYỂN SANG SUPABASE THẬT qua RLS. */
+export async function updateRequestStatus(id, status) {
+  const session = getSession();
+  const sb = getSupabaseClient(session?.sbToken);
+  const { error } = await sb.from('requests').update({ status }).eq('id', id);
+  if (error) throw new Error('Không cập nhật được trạng thái, thử lại sau.');
   const r = state.requests.find((x) => x.id === id);
-  if (r) { r.status = status; notify(); }
+  if (r) r.status = status;
+  notify();
+}
+function mapRequestRow(row) {
+  return {
+    id: row.id, customerId: row.customer_id, type: row.type, amount: row.amount,
+    purpose: row.purpose || '', termMonths: row.term_months, note: row.note || '',
+    status: row.status, createdAt: row.created_at,
+  };
 }
 
 // ------------------------------------------------------------
