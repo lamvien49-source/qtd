@@ -1,7 +1,5 @@
 import * as S from '../../state.js';
-import { icon } from '../../icons.js';
 import { pageHeader } from '../../components/shell.js';
-import { confirmDialog } from '../../components/modal.js';
 import { toast } from '../../components/toast.js';
 
 export function renderHeader(headerEl) {
@@ -54,11 +52,6 @@ export function render(contentEl) {
       </form>
     </div>
 
-    <div class="card card-pad">
-      <div class="section-head"><h2>Dữ liệu demo</h2></div>
-      <p class="text-sm text-muted mb-8">Toàn bộ dữ liệu (khách hàng, hợp đồng, yêu cầu) đang lưu trong trình duyệt này (localStorage) — chưa có backend thật.</p>
-      <button class="btn btn-danger-outline btn-block" id="btn-reset">${icon('refresh', 'icon-sm')} Tạo lại dữ liệu mẫu</button>
-    </div>
   `;
 
   let bannerEnabled = org.bannerEnabled;
@@ -97,14 +90,6 @@ export function render(contentEl) {
       await S.updateOrg({ bannerEnabled, bannerTitle: fd.get('bannerTitle'), bannerText: fd.get('bannerText') });
       toast('Đã lưu banner', 'success');
     } catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
-  });
-
-  contentEl.querySelector('#btn-reset').addEventListener('click', () => {
-    confirmDialog({
-      title: 'Tạo lại dữ liệu mẫu?', message: 'Toàn bộ khách hàng, hợp đồng, yêu cầu hiện tại sẽ bị xóa và thay bằng dữ liệu mẫu mới.',
-      confirmLabel: 'Tạo lại', danger: true,
-      onConfirm: async () => { await S.resetDemoData(); toast('Đã tạo lại dữ liệu mẫu', 'success'); location.hash = '#/admin'; },
-    });
   });
 }
 function esc(s) { return String(s || '').replace(/"/g, '&quot;'); }
