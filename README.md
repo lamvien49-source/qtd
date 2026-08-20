@@ -1,6 +1,6 @@
 # Quỹ Tín Dụng Nhân Dân Bình Nguyên — Cổng khách hàng (BẢN DEMO)
 
-⚠️ **Đây là bản demo/prototype giao diện, KHÔNG PHẢI hệ thống sẵn sàng vận hành thật.** Toàn bộ dữ liệu khách hàng trong bản demo này (tên, CCCD, khoản vay...) là **dữ liệu giả**, được sinh tự động, không liên quan đến bất kỳ khách hàng thật nào. **Tuyệt đối không nhập dữ liệu thật của khách hàng vào bản demo này** cho đến khi đã hoàn tất phần backend + bảo mật thật (xem mục "Trước khi dùng thật" bên dưới).
+⚠️ **Đây là bản demo/prototype giao diện, CHƯA sẵn sàng vận hành thật hoàn toàn.** Đã kết nối **database + backend thật (Supabase)** — không còn chỉ chạy trên `localStorage` như trước (xem `docs/supabase-migration.md`) — nhưng **chưa có OTP thật** cho đăng nhập/thao tác nhạy cảm, và **chưa rà soát bảo mật/pháp lý độc lập** (xem mục "Trước khi dùng thật" bên dưới). **Chưa nhập dữ liệu thật của khách hàng cho tới khi hoàn tất các mục còn lại đó.**
 
 ## Bản demo này minh họa gì
 
@@ -132,16 +132,19 @@ Mục **"Yêu cầu mới nhất"** hiện dưới 4 ô thống kê, hiển th�
 
 ## Giới hạn của bản demo (quan trọng)
 
-- **Không có backend/database thật** — dữ liệu lưu trong `localStorage` của trình duyệt, mỗi thiết bị/trình duyệt là 1 kho dữ liệu riêng biệt, không đồng bộ giữa các máy.
-- **Không có OTP** — chỉ có tài khoản do admin cấp (CCCD + mật khẩu tạm) + bắt buộc đổi mật khẩu lần đầu + khóa tạm sau nhiều lần đăng nhập sai, KHÔNG thay thế được lớp bảo mật OTP nếu triển khai thật.
+- **Không có OTP** — chỉ có tài khoản do admin cấp (CCCD + mật khẩu tạm) + bắt buộc đổi mật khẩu lần đầu + khóa tạm sau nhiều lần đăng nhập sai, KHÔNG thay thế được lớp bảo mật OTP nếu triển khai thật. **Đã tạm hoãn** (tốn phí SMS thật, chưa cần ngay) nhưng vẫn an toàn nhờ Edge Function xác minh mật khẩu ở server — xem `docs/supabase-migration.md` mục 5.
 - **"Chia sẻ ảnh QR"** dùng Web Share API của trình duyệt — hiện đúng bảng chọn app trên điện thoại, nhưng **KHÔNG tự mở app ngân hàng kèm sẵn số tiền/nội dung** như bạn mong muốn (đã xác nhận qua thực tế dùng thử) — chỉ chia sẻ được ảnh, app nhận được vẫn cần tự quét QR từ ảnh đó. Quét trực tiếp bằng camera trong app ngân hàng (từ ảnh QR hiển thị sẵn trên trang) vẫn là phương án chắc chắn hoạt động nhất và tự điền sẵn số tiền/nội dung.
 - **"Nhắn SMS báo lãi"** mở app nhắn tin có sẵn trên điện thoại quản trị viên (liên kết `sms:`) với nội dung soạn sẵn — quản trị viên vẫn phải tự bấm Gửi và tin nhắn tính phí theo SIM/gói cước của máy đó, KHÔNG phải hệ thống tự động gửi SMS hàng loạt qua tổng đài SMS Brandname.
-- Mật khẩu được băm bằng `crypto.subtle` (SHA-256 + muối) ngay trong trình duyệt cho đúng nguyên tắc, nhưng vì không có server thật đứng sau nên đây **chỉ minh họa luồng**, chưa đạt chuẩn bảo mật để vận hành thật.
+- **Chưa rà soát bảo mật/pháp lý độc lập** — xem checklist bên dưới.
+
+## Kết nối backend thật (Supabase) — đã hoàn tất
+
+App **không còn chạy trên `localStorage` demo** — toàn bộ dữ liệu (khách hàng, hợp đồng, tài khoản, yêu cầu tư vấn, cài đặt tổ chức) đã chuyển sang **Supabase (Postgres) thật**, qua 1 Edge Function duy nhất (`supabase/functions/create-account/`) xử lý đăng nhập + mọi thao tác nhạy cảm (băm/so mật khẩu, tạo/xóa tài khoản, nhập Excel) ở phía server, cộng với Row Level Security lọc đúng dữ liệu theo từng vai trò. Chi tiết đầy đủ kiến trúc, lý do thiết kế, và toàn bộ SQL/policy: xem **`docs/supabase-migration.md`**.
 
 ## Trước khi dùng thật (bắt buộc)
 
-1. Thay lớp lưu trữ `js/state.js` bằng kết nối tới **database + backend thật** (vd: Supabase) — dữ liệu khách hàng/hợp đồng phải nằm trên server, không phải localStorage.
-2. Thêm **OTP** gửi qua SMS thật (nhà cung cấp SMS Brandname) cho đăng nhập/thao tác nhạy cảm.
+1. ~~Thay lớp lưu trữ bằng database + backend thật~~ — **đã xong** (Supabase, xem mục trên).
+2. Thêm **OTP** gửi qua SMS thật (nhà cung cấp SMS Brandname) cho đăng nhập/thao tác nhạy cảm — hiện đang tạm hoãn có chủ đích.
 3. **Xác minh lại mã BIN ngân hàng + số tài khoản** tại Cài đặt trước khi dùng thật.
 4. Rà soát tuân thủ **Nghị định 13/2023/NĐ-CP về bảo vệ dữ liệu cá nhân** trước khi thu thập/lưu trữ CCCD của khách hàng thật.
 5. Thực hiện **rà soát bảo mật (security review)** độc lập trước khi cho khách hàng thật sử dụng.

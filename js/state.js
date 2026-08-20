@@ -1,8 +1,13 @@
 // ============================================================
-// Lớp dữ liệu & nghiệp vụ trung tâm (state) — BẢN DEMO, lưu trong
-// localStorage của trình duyệt. KHÔNG kết nối database thật, KHÔNG
-// dùng để vận hành thật — chỉ minh họa giao diện & luồng nghiệp vụ.
-// Toàn bộ dữ liệu khách hàng trong file này là dữ liệu GIẢ.
+// Lớp dữ liệu & nghiệp vụ trung tâm (state) — ĐÃ KẾT NỐI SUPABASE THẬT
+// (xem docs/supabase-migration.md): đăng nhập, khách hàng/hợp đồng, tài
+// khoản, yêu cầu tư vấn, cài đặt tổ chức đều đọc/ghi qua Supabase (Edge
+// Function + Row Level Security), không còn chỉ chạy trên localStorage.
+// `state` object trong file này vẫn đóng vai trò CACHE trong bộ nhớ (để
+// giữ nguyên toàn bộ UI/view layer không cần sửa) — mọi hàm ghi đều gọi
+// Supabase trước, thành công mới cập nhật cache + notify() để vẽ lại màn
+// hình. localStorage/seedDemoData() chỉ còn dùng làm dữ liệu demo hiển
+// thị TẠM lúc app chưa kết nối được mạng, không phải nguồn sự thật nữa.
 // ============================================================
 import { genId, mulberry32, randInt, addDays, daysBetween } from './utils.js';
 import { getSupabaseClient, callLoginFunction, callCreateAccountFunction, callImportDataFunction } from './lib/supabaseClient.js';
