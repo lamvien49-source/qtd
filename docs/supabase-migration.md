@@ -56,7 +56,7 @@ create table admins (
   allowed_xom text[] default '{}',
   salt text,
   hash text,
-  auth_user_id uuid references auth.users(id), -- xem mục 5
+  auth_user_id uuid unique default gen_random_uuid(), -- xem mục 5 — KHÔNG phải auth.users thật
   created_at timestamptz default now()
 );
 
@@ -74,7 +74,7 @@ create table customers (
   must_change_password boolean default true,
   failed_attempts int default 0,
   locked_until timestamptz,
-  auth_user_id uuid references auth.users(id), -- xem mục 5
+  auth_user_id uuid unique default gen_random_uuid(), -- xem mục 5 — KHÔNG phải auth.users thật
   created_at timestamptz default now()
 );
 -- KHÔNG có cột temp_password: mật khẩu tạm chỉ nên trả về 1 LẦN DUY NHẤT lúc tạo
@@ -141,47 +141,86 @@ grant select, insert, update, delete on orgs, admins, customers, contracts, requ
 *(Cấp quyền ở tầng bảng cho phép API "được thử" truy vấn; RLS + policy phía trên mới là lớp quyết
 định thật sự lọc được đúng dòng nào — 2 lớp này bổ sung cho nhau, không lớp nào thay được lớp kia.)*
 
-## 5. Xác thực (Auth) — điểm cần quyết định trước khi code
+## 5. Xác thực (Auth) — đã chốt: đăng nhập tự chế + Edge Function, không tốn phí OTP
 
-App hiện tại **tự làm đăng nhập riêng** (CCCD/username + băm mật khẩu bằng `crypto.subtle` ngay
-trong trình duyệt) — không dùng Supabase Auth. Có 2 hướng:
+Quyết định thực tế (đã trao đổi trực tiếp): **hoãn OTP/SMS** (tốn phí thật, chưa cần ngay) nhưng
+**vẫn phải an toàn** dù chưa có OTP — không chấp nhận để lộ toàn bộ dữ liệu qua "anon key" như 1
+app bình thường không có gì canh gác. Giải pháp: **giữ nguyên logic kiểm tra mật khẩu hiện tại**
+(CCCD/username + băm SHA-256 có muối, y hệt `js/state.js`), chỉ chuyển chỗ chạy nó ra
+**Supabase Edge Function** (code chạy trên server của Supabase, không phải trong trình duyệt).
 
-### Hướng A — Chuyển sang Supabase Auth (khuyến nghị)
-- Khách hàng: dùng **Phone OTP** của Supabase Auth (đăng nhập bằng SĐT, nhận mã OTP qua SMS) — vừa
-  thay được backend thật, vừa giải quyết luôn mục **"Thêm OTP"** cũng đang ghi trong README là bắt
-  buộc trước khi dùng thật. Cần đăng ký 1 nhà cung cấp SMS (Twilio, MessageBird...) trong Supabase Auth
-  settings.
-- Quản trị viên/nhân viên: dùng **Email + mật khẩu** (hoặc magic link) của Supabase Auth.
-- Sau khi đăng nhập, `auth.uid()` cho biết chính xác ai đang gọi API → RLS viết được thẳng theo
-  `auth_user_id` trong bảng `customers`/`admins`.
-- Bỏ hẳn cột `salt`/`hash` tự làm — Supabase Auth tự lo phần băm mật khẩu.
+### Cách hoạt động
+1. Khách/admin gõ CCCD (hoặc SĐT/tên đăng nhập) + mật khẩu trong app như bình thường.
+2. Trình duyệt gọi Edge Function `login` (file `supabase/functions/login/index.ts` trong repo này)
+   — gửi kèm `{ role, identifier, password }`.
+3. Edge Function dùng `service_role key` (chỉ tồn tại phía server, không lộ ra trình duyệt) tra
+   đúng dòng trong `customers`/`admins`, so mật khẩu bằng đúng thuật toán cũ, xử lý khóa tài khoản
+   sau nhiều lần sai y hệt logic hiện tại.
+4. Đúng mật khẩu → Edge Function **tự ký 1 JWT** (không qua Supabase Auth/GoTrue) chứa:
+   - `sub`: giá trị cột `auth_user_id` (uuid tự sinh sẵn khi tạo tài khoản, KHÔNG phải user thật
+     trong `auth.users` — chỉ mượn định dạng để PostgREST hiểu).
+   - `role: "authenticated"` — bắt buộc, để PostgREST cấp đúng quyền Postgres tương ứng.
+   - `app_role`: `"customer"` hoặc `"admin"` — RLS dùng để phân biệt.
+   - `row_id`: đúng `id` của dòng đó — RLS dùng để khớp chính xác không cần join qua `auth_user_id`.
+5. Trình duyệt cầm JWT này gọi thẳng Supabase (`Authorization: Bearer <token>`) cho mọi thao tác
+   sau đó — RLS ở bên dưới tự lọc đúng phần dữ liệu của người đó.
 
-Ví dụ policy khi dùng hướng A:
+**Vì sao an toàn dù không có OTP**: bước băm/so mật khẩu CHỈ chạy trong Edge Function (server), dùng
+`service_role key` không ai lấy được ngoài bạn — trình duyệt/`anon key` không tự tạo được JWT hợp lệ
+nếu không đi qua đúng bước xác minh mật khẩu này trước.
+
+### RLS policy (dùng JWT ở trên, không cần `auth.uid()`/`auth.users` thật)
 ```sql
--- Khách hàng chỉ thấy đúng hợp đồng của chính mình
-create policy "customer sees own contracts" on contracts
+-- Khách hàng chỉ thấy đúng hồ sơ + hợp đồng của chính mình
+create policy "customer sees own profile" on customers
   for select using (
-    customer_id in (select id from customers where auth_user_id = auth.uid())
+    (auth.jwt() ->> 'app_role') = 'customer'
+    and id = (auth.jwt() ->> 'row_id')
   );
 
--- Admin (role='super') thấy tất cả; nhân viên chỉ thấy khách trong Thôn/Xóm được gán
-create policy "admin/staff sees scoped customers" on customers
+create policy "customer sees own contracts" on contracts
   for select using (
-    exists (
+    (auth.jwt() ->> 'app_role') = 'customer'
+    and customer_id = (auth.jwt() ->> 'row_id')
+  );
+
+-- Admin toàn quyền (role='super') thấy tất cả khách hàng
+create policy "super admin sees all customers" on customers
+  for select using (
+    (auth.jwt() ->> 'app_role') = 'admin'
+    and exists (
+      select 1 from admins a where a.id = (auth.jwt() ->> 'row_id') and a.role = 'super'
+    )
+  );
+
+-- Nhân viên (role='staff') chỉ thấy khách trong Thôn/Xóm được gán
+create policy "staff sees scoped customers" on customers
+  for select using (
+    (auth.jwt() ->> 'app_role') = 'admin'
+    and exists (
       select 1 from admins a
-      where a.auth_user_id = auth.uid()
-        and (a.role = 'super' or thon = any(a.allowed_thon) or xom = any(a.allowed_xom))
+      where a.id = (auth.jwt() ->> 'row_id') and a.role = 'staff'
+        and (thon = any(a.allowed_thon) or xom = any(a.allowed_xom))
     )
   );
 ```
+*(Đây mới là ví dụ 3 policy đầu tiên cho bảng `customers`/`contracts` — các bảng còn lại
+(`admins`, `requests`, `orgs`) và các thao tác insert/update/delete sẽ viết tiếp khi làm tới phần
+thay thế từng hàm trong `state.js`, mục 7.)*
 
-### Hướng B — Giữ nguyên cách đăng nhập tự chế hiện tại
-- Không dùng được RLS dựa vào `auth.uid()` một cách trực tiếp.
-- Cần viết **Supabase Edge Function** (chạy phía server, dùng `service_role key` — không lộ ra
-  trình duyệt) để tự kiểm tra phiên đăng nhập tự chế rồi mới truy vấn DB thay khách.
-- Nhiều việc hơn, vẫn thiếu OTP thật (README vẫn yêu cầu bổ sung mục này riêng).
-
-**→ Khuyến nghị dùng Hướng A** — vừa đúng chuẩn, vừa giải quyết 2 mục còn thiếu trong README cùng lúc.
+### Việc cần bạn làm để deploy Edge Function `login`
+1. Vào Supabase Dashboard → menu ☰ → **Edge Functions** → **New function** → đặt tên đúng là `login`.
+2. Copy toàn bộ nội dung file `supabase/functions/login/index.ts` trong repo này, dán vào — **Deploy**.
+3. Vào **Project Settings → API → JWT Settings**, tìm dòng **"JWT Secret"** (hoặc "Legacy JWT
+   Secret" nếu project mới hiển thị khác — nếu không thấy chữ nào giống vậy, chụp màn hình gửi tôi,
+   Supabase hay đổi giao diện phần này).
+4. Copy giá trị đó → vào **Edge Functions → login → Settings/Secrets** → thêm secret mới, đặt tên
+   **`CUSTOM_JWT_SECRET`**, dán giá trị vừa copy vào → Save. **Không dán giá trị này vào chat** —
+   đây là bí mật thật, khác hẳn URL/anon key.
+5. Chạy đoạn SQL ở mục "RLS policy" trên (SQL Editor như bước tạo bảng) — nhớ **bỏ dòng
+   `references auth.users(id)`** nếu bạn đã chạy schema cũ trước đó (chạy `alter table customers
+   drop constraint if exists customers_auth_user_id_fkey;` và tương tự cho `admins` trước khi thêm
+   lại default `gen_random_uuid()` nếu cần).
 
 ## 6. Gắn Supabase JS client vào code (giữ đúng kiến trúc "0 dependency, ES Module thuần")
 
