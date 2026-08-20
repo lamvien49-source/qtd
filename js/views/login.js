@@ -78,7 +78,7 @@ export function renderLogin(root, onLoggedIn) {
           if (err) { err.textContent = res.reason; err.style.display = 'block'; }
           return;
         }
-        S.setSession({ role: 'admin', id: res.adminId });
+        S.setSession({ role: 'admin', id: res.adminId, sbToken: res.sbToken });
         toast('Đăng nhập thành công', 'success');
         onLoggedIn();
       } else {

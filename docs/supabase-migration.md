@@ -206,6 +206,22 @@ create policy "staff sees scoped customers" on customers
         and (thon = any(a.allowed_thon) or xom = any(a.allowed_xom))
     )
   );
+
+-- Admin xem hợp đồng: super thấy tất cả, staff chỉ thấy hợp đồng của khách trong phạm vi được gán
+create policy "admin sees contracts in scope" on contracts
+  for select using (
+    (auth.jwt() ->> 'app_role') = 'admin'
+    and exists (
+      select 1 from customers c
+      join admins a on a.id = (auth.jwt() ->> 'row_id')
+      where c.id = contracts.customer_id
+        and (a.role = 'super' or c.thon = any(a.allowed_thon) or c.xom = any(a.allowed_xom))
+    )
+  );
+
+-- Admin/nhân viên xem được danh sách quản trị viên (VD: trang Quản lý User)
+create policy "admin sees admins" on admins
+  for select using ((auth.jwt() ->> 'app_role') = 'admin');
 ```
 *(Đây mới là ví dụ 3 policy đầu tiên cho bảng `customers`/`contracts` — các bảng còn lại
 (`admins`, `requests`, `orgs`) và các thao tác insert/update/delete sẽ viết tiếp khi làm tới phần

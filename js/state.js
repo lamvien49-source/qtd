@@ -590,12 +590,39 @@ export async function importFromPastedTable(text, { fullSync = false } = {}) {
 // ------------------------------------------------------------
 // Quản trị viên
 // ------------------------------------------------------------
+/**
+ * Đăng nhập quản trị viên/nhân viên — ĐÃ CHUYỂN SANG SUPABASE THẬT, cùng cơ
+ * chế với loginCustomer() (xem ghi chú ở đó). Đúng mật khẩu thì tải toàn bộ
+ * admins/customers/contracts từ Supabase vào state — RLS tự lọc đúng phạm
+ * vi (nhân viên chỉ thấy khách trong Thôn/Xóm được gán, quản trị toàn
+ * quyền thấy hết), y hệt logic phân quyền client-side cũ, chỉ khác là giờ
+ * chặn được thật ở tầng server chứ không chỉ ẩn trên giao diện.
+ */
 export async function loginAdmin(username, password) {
-  const a = state.admins.find((x) => x.username === username.trim());
-  if (!a) return { ok: false, reason: 'Sai tài khoản hoặc mật khẩu.' };
-  const ok = await verifyCredential(password, a.salt, a.hash);
-  if (!ok) return { ok: false, reason: 'Sai tài khoản hoặc mật khẩu.' };
-  return { ok: true, adminId: a.id };
+  const res = await callLoginFunction({ role: 'admin', identifier: username, password });
+  if (!res.ok) return { ok: false, reason: res.reason };
+  await loadAdminSessionData(res.token);
+  return { ok: true, adminId: res.id, sbToken: res.token };
+}
+
+async function loadAdminSessionData(token) {
+  const sb = getSupabaseClient(token);
+  const [{ data: adminRows }, { data: customerRows }, { data: contractRows }] = await Promise.all([
+    sb.from('admins').select('*'),
+    sb.from('customers').select('*'),
+    sb.from('contracts').select('*'),
+  ]);
+  state.admins = (adminRows || []).map(mapAdminRow);
+  state.customers = (customerRows || []).map(mapCustomerRow);
+  state.contracts = (contractRows || []).map(mapContractRow);
+}
+
+function mapAdminRow(row) {
+  return {
+    id: row.id, username: row.username, name: row.name, role: row.role,
+    allowedThon: row.allowed_thon || [], allowedXom: row.allowed_xom || [],
+    salt: row.salt, hash: row.hash, createdAt: row.created_at,
+  };
 }
 export function getAdmin(id) { return state.admins.find((a) => a.id === id); }
 export function listAdmins() { return state.admins; }
