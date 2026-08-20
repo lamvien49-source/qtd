@@ -382,7 +382,18 @@ Deno.serve(async (req) => {
     const customerByCccd = new Map((allCustomers || []).map((c: any) => [c.cccd, c]));
     const contractByCode = new Map((allContracts || []).filter((c: any) => c.code).map((c: any) => [c.code, c]));
 
-    const customerUpserts: Record<string, unknown>[] = [];
+    // Tách riêng 2 mảng cho khách MỚI và khách ĐÃ CÓ SẴN — không gộp chung 1
+    // upsert() duy nhất, vì khi ghi hàng loạt, PostgREST tự động lấy HỢP các
+    // cột xuất hiện trong TOÀN BỘ mảng làm danh sách cột chung; dòng nào
+    // thiếu 1 cột nào đó (vd: dòng "khách đã có sẵn" không đổi cccd nên
+    // không đưa cccd vào patch) sẽ tự bị điền NULL cho đúng cột đó — cccd
+    // not null nên báo lỗi ngay, nhưng các cột cho phép null khác (địa chỉ,
+    // sđt...) sẽ ÂM THẦM bị xóa mất mà không báo lỗi gì. Tách riêng 2 lệnh,
+    // mỗi lệnh nội bộ luôn có bộ cột đồng nhất (khách mới: object đủ mọi
+    // cột; khách cũ: luôn là object đầy đủ `cust` sau khi merge patch, chứ
+    // không phải chỉ mỗi phần thay đổi) để tránh hoàn toàn tình huống này.
+    const newCustomerUpserts: Record<string, unknown>[] = [];
+    const existingCustomerUpserts: Record<string, unknown>[] = [];
     const contractUpserts: Record<string, unknown>[] = [];
     const touchedContractIds = new Set<string>();
     const usedCodes = new Set<string>();
@@ -401,7 +412,7 @@ Deno.serve(async (req) => {
         if (row.address) { patch.address = row.address; Object.assign(patch, parsedAddr); }
         cust = { ...cust, ...patch };
         customerByCccd.set(cccd, cust);
-        customerUpserts.push({ id: cust.id, ...patch });
+        existingCustomerUpserts.push(cust);
         result.existingCustomers++;
       } else {
         const custId = genId('cust');
@@ -414,7 +425,7 @@ Deno.serve(async (req) => {
           failed_attempts: 0, locked_until: null,
         };
         customerByCccd.set(cccd, cust);
-        customerUpserts.push(cust);
+        newCustomerUpserts.push(cust);
         result.newProfiles++;
         result.newAccounts.push({ name: cust.name, cccd, tempPassword: temp });
       }
@@ -445,9 +456,13 @@ Deno.serve(async (req) => {
       result.contracts++;
     }
 
-    if (customerUpserts.length) {
-      const { error } = await admin.from('customers').upsert(customerUpserts, { onConflict: 'id' });
-      if (error) result.errors.push('Lỗi ghi hồ sơ khách hàng: ' + error.message);
+    if (newCustomerUpserts.length) {
+      const { error } = await admin.from('customers').upsert(newCustomerUpserts, { onConflict: 'id' });
+      if (error) result.errors.push('Lỗi ghi hồ sơ khách hàng mới: ' + error.message);
+    }
+    if (existingCustomerUpserts.length) {
+      const { error } = await admin.from('customers').upsert(existingCustomerUpserts, { onConflict: 'id' });
+      if (error) result.errors.push('Lỗi cập nhật hồ sơ khách hàng: ' + error.message);
     }
     if (contractUpserts.length) {
       const { error } = await admin.from('contracts').upsert(contractUpserts, { onConflict: 'id' });
