@@ -410,6 +410,16 @@ Deno.serve(async (req) => {
         if (row.name) patch.name = row.name;
         if (row.phone) patch.phone = String(row.phone).replace(/\s/g, '');
         if (row.address) { patch.address = row.address; Object.assign(patch, parsedAddr); }
+        // Hồ sơ đã có nhưng KHÔNG còn Use (vd: admin đã bấm "Xóa Use" trước
+        // đó — hồ sơ/hợp đồng được giữ lại nhưng salt/hash bị xóa) — nhập
+        // lại Excel phải tự cấp lại tài khoản mới, không chỉ cập nhật hồ sơ
+        // suông rồi để khách mãi không đăng nhập được.
+        if (!cust.salt || !cust.hash) {
+          const temp = genTempPassword();
+          const cred = await makeCredential(temp);
+          Object.assign(patch, cred, { must_change_password: true, failed_attempts: 0, locked_until: null });
+          result.newAccounts.push({ name: (patch.name as string) || cust.name, cccd, tempPassword: temp });
+        }
         cust = { ...cust, ...patch };
         customerByCccd.set(cccd, cust);
         existingCustomerUpserts.push(cust);
