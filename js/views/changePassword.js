@@ -34,9 +34,14 @@ export function renderChangePassword(root, customerId, onDone, opts = {}) {
     const pw1 = fd.get('pw1'), pw2 = fd.get('pw2');
     const errEl = root.querySelector('#pw-error');
     if (pw1 !== pw2) { errEl.textContent = 'Mật khẩu nhập lại không khớp.'; errEl.style.display = 'block'; return; }
-    await S.setCustomerPassword(customerId, pw1, { mustChangePassword: false });
-    S.setSession({ ...S.getSession(), mustChangePassword: false });
-    toast('Đã đổi mật khẩu thành công', 'success');
-    onDone();
+    try {
+      await S.setCustomerPassword(customerId, pw1, { mustChangePassword: false });
+      S.setSession({ ...S.getSession(), mustChangePassword: false });
+      toast('Đã đổi mật khẩu thành công', 'success');
+      onDone();
+    } catch (err) {
+      errEl.textContent = err.message || 'Có lỗi xảy ra, thử lại sau.';
+      errEl.style.display = 'block';
+    }
   });
 }

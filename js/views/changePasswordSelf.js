@@ -46,12 +46,14 @@ export function render(contentEl) {
     const ok = isAdmin ? await S.verifyAdminPassword(session.id, pwOld) : await S.verifyCustomerPassword(session.id, pwOld);
     if (!ok) { showErr('Mật khẩu hiện tại không đúng.'); return; }
 
-    if (isAdmin) {
-      await S.setStaffPassword(session.id, pw1);
-    } else {
-      await S.setCustomerPassword(session.id, pw1, { mustChangePassword: false });
-    }
-    toast('Đã đổi mật khẩu thành công', 'success');
-    e.target.reset();
+    try {
+      if (isAdmin) {
+        await S.setStaffPassword(session.id, pw1);
+      } else {
+        await S.setCustomerPassword(session.id, pw1, { mustChangePassword: false });
+      }
+      toast('Đã đổi mật khẩu thành công', 'success');
+      e.target.reset();
+    } catch (err) { showErr(err.message || 'Có lỗi xảy ra, thử lại sau.'); }
   });
 }

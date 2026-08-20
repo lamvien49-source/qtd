@@ -7,6 +7,9 @@
 // Cách gọi: POST body luôn có field "type":
 //   { type: 'login', role: 'customer'|'admin', identifier, password }
 //     -> PHẢI gọi trước để lấy JWT — không cần JWT sẵn có.
+//   { type: 'verify-own-password', password } / { type: 'set-own-password',
+//     newPassword, mustChangePassword? } -> tự đổi mật khẩu CHÍNH MÌNH, cần
+//     JWT hợp lệ (khách hàng hoặc admin đều được, KHÔNG cần role='super').
 //   Tất cả các "type" còn lại BẮT BUỘC header Authorization: Bearer <JWT>
 //   của 1 admin role='super' (xác minh lại tại server, không tin JWT mù):
 //     { type: 'customer', cccd, name?, phone?, password? }
@@ -188,6 +191,35 @@ Deno.serve(async (req) => {
       iat: now, exp: now + SESSION_HOURS * 3600,
     });
     return json({ ok: true, token, id: row.id, mustChangePassword: role === 'customer' ? !!row.must_change_password : false });
+  }
+
+  // ===== type: 'verify-own-password' / 'set-own-password' — tự đổi mật khẩu
+  // CHÍNH MÌNH, cần JWT hợp lệ (khách hàng HOẶC admin/nhân viên đều được,
+  // không cần role='super') =====
+  if (body.type === 'verify-own-password' || body.type === 'set-own-password') {
+    const authHeader = req.headers.get('Authorization') || '';
+    const selfToken = authHeader.replace(/^Bearer\s+/i, '');
+    const selfClaims = selfToken ? await verifyJwt(selfToken) : null;
+    if (!selfClaims || !selfClaims.app_role) {
+      return json({ ok: false, reason: 'Chưa đăng nhập hoặc phiên đã hết hạn.' }, 401);
+    }
+    const selfTable = selfClaims.app_role === 'customer' ? 'customers' : 'admins';
+
+    if (body.type === 'verify-own-password') {
+      const { data: row } = await admin.from(selfTable).select('salt, hash').eq('id', selfClaims.row_id).maybeSingle();
+      if (!row || !row.salt || !row.hash) return json({ ok: true, valid: false });
+      const valid = await verifyCredential(body.password || '', row.salt, row.hash);
+      return json({ ok: true, valid });
+    }
+
+    const newPw = String(body.newPassword || '').trim();
+    if (newPw.length < 6) return json({ ok: false, reason: 'Mật khẩu mới phải từ 6 ký tự.' }, 400);
+    const cred = await makeCredential(newPw);
+    const patch: Record<string, unknown> = { ...cred };
+    if (selfTable === 'customers') patch.must_change_password = !!body.mustChangePassword;
+    const { error } = await admin.from(selfTable).update(patch).eq('id', selfClaims.row_id);
+    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    return json({ ok: true });
   }
 
   // ===== Mọi type khác: bắt buộc JWT admin role='super' =====

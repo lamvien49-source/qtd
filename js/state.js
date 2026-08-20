@@ -274,21 +274,23 @@ function mapContractRow(row) {
   };
 }
 
-/** Kiểm tra mật khẩu hiện tại của khách hàng — dùng cho màn tự đổi mật khẩu. */
+/** Kiểm tra mật khẩu hiện tại của khách hàng — ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function (chỉ tự xác minh chính mình). */
 export async function verifyCustomerPassword(customerId, password) {
-  const c = getCustomer(customerId);
-  if (!c || !c.salt || !c.hash) return false;
-  return verifyCredential(password, c.salt, c.hash);
+  const session = getSession();
+  if (!session || session.id !== customerId) return false;
+  const res = await callCreateAccountFunction(session.sbToken, { type: 'verify-own-password', password });
+  return !!(res.ok && res.valid);
 }
 
+/** ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function (tự đổi mật khẩu chính mình, không cần quyền super). */
 export async function setCustomerPassword(customerId, newPassword, opts = {}) {
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, {
+    type: 'set-own-password', newPassword, mustChangePassword: !!opts.mustChangePassword,
+  });
+  if (!res.ok) throw new Error(res.reason || 'Không đổi được mật khẩu.');
   const c = getCustomer(customerId);
-  if (!c) return;
-  const cred = await makeCredential(newPassword);
-  c.salt = cred.salt;
-  c.hash = cred.hash;
-  c.mustChangePassword = !!opts.mustChangePassword;
-  c.tempPassword = opts.mustChangePassword ? newPassword : null; // chỉ giữ tạm để admin xem/cấp lại
+  if (c) { c.mustChangePassword = !!opts.mustChangePassword; c.tempPassword = null; }
   notify();
 }
 
@@ -695,19 +697,19 @@ export async function resetStaffPassword(id, customPassword) {
   return res.tempPassword;
 }
 /** Kiểm tra mật khẩu hiện tại của quản trị viên/nhân viên — dùng cho màn tự đổi mật khẩu. */
+/** ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function (chỉ tự xác minh chính mình). */
 export async function verifyAdminPassword(id, password) {
-  const a = getAdmin(id);
-  if (!a || !a.salt || !a.hash) return false;
-  return verifyCredential(password, a.salt, a.hash);
+  const session = getSession();
+  if (!session || session.id !== id) return false;
+  const res = await callCreateAccountFunction(session.sbToken, { type: 'verify-own-password', password });
+  return !!(res.ok && res.valid);
 }
 
-/** Tự đổi mật khẩu (Quản trị viên/nhân viên tự đặt mật khẩu mới cho chính mình). */
+/** Tự đổi mật khẩu (Quản trị viên/nhân viên tự đặt mật khẩu mới cho chính mình) — ĐÃ CHUYỂN SANG SUPABASE THẬT. */
 export async function setStaffPassword(id, newPassword) {
-  const a = getAdmin(id);
-  if (!a) throw new Error('Không tìm thấy tài khoản');
-  const cred = await makeCredential(newPassword);
-  a.salt = cred.salt;
-  a.hash = cred.hash;
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'set-own-password', newPassword });
+  if (!res.ok) throw new Error(res.reason || 'Không đổi được mật khẩu.');
   notify();
 }
 /** ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function "create-account" (server tự kiểm tra giữ lại ít nhất 1 super admin). */
