@@ -254,7 +254,15 @@ create policy "admin sees requests in scope" on requests
 create policy "admin updates requests" on requests
   for update using ((auth.jwt() ->> 'app_role') = 'admin');
 ```
-*(Bảng `orgs` — cài đặt banner/thông tin ngân hàng — chưa có policy, làm ở đợt sau.)*
+-- orgs (banner + thông tin ngân hàng): ai cũng xem được (kể cả chưa đăng
+-- nhập — màn đăng nhập cần hiện tên quỹ), không nhạy cảm vì số tài khoản
+-- ngân hàng vốn phải công khai để khách chuyển khoản. CHỈ super admin sửa.
+create policy "anyone sees org" on orgs for select using (true);
+create policy "super admin updates org" on orgs
+  for update using (
+    (auth.jwt() ->> 'app_role') = 'admin'
+    and exists (select 1 from admins a where a.id = (auth.jwt() ->> 'row_id') and a.role = 'super')
+  );
 
 ### Việc cần bạn làm để deploy Edge Function
 1. Vào Supabase Dashboard → menu ☰ → **Edge Functions** → tạo/mở function (tên gì cũng được, URL

@@ -69,28 +69,34 @@ export function render(contentEl) {
     });
   });
 
-  contentEl.querySelector('#org-form').addEventListener('submit', (e) => {
+  contentEl.querySelector('#org-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    S.updateOrg({ name: fd.get('name'), shortName: fd.get('shortName'), hotline: fd.get('hotline'), address: fd.get('address') });
-    toast('Đã lưu thông tin quỹ tín dụng', 'success');
+    try {
+      await S.updateOrg({ name: fd.get('name'), shortName: fd.get('shortName'), hotline: fd.get('hotline'), address: fd.get('address') });
+      toast('Đã lưu thông tin quỹ tín dụng', 'success');
+    } catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
   });
 
-  contentEl.querySelector('#bank-form').addEventListener('submit', (e) => {
+  contentEl.querySelector('#bank-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    S.updateOrg({
-      bankName: fd.get('bankName'), bankBin: fd.get('bankBin').trim(),
-      bankAccountNo: fd.get('bankAccountNo').trim(), bankAccountName: fd.get('bankAccountName').trim(),
-    });
-    toast('Đã lưu thông tin nhận thanh toán', 'success');
+    try {
+      await S.updateOrg({
+        bankName: fd.get('bankName'), bankBin: fd.get('bankBin').trim(),
+        bankAccountNo: fd.get('bankAccountNo').trim(), bankAccountName: fd.get('bankAccountName').trim(),
+      });
+      toast('Đã lưu thông tin nhận thanh toán', 'success');
+    } catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
   });
 
-  contentEl.querySelector('#banner-form').addEventListener('submit', (e) => {
+  contentEl.querySelector('#banner-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
-    S.updateOrg({ bannerEnabled, bannerTitle: fd.get('bannerTitle'), bannerText: fd.get('bannerText') });
-    toast('Đã lưu banner', 'success');
+    try {
+      await S.updateOrg({ bannerEnabled, bannerTitle: fd.get('bannerTitle'), bannerText: fd.get('bannerText') });
+      toast('Đã lưu banner', 'success');
+    } catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
   });
 
   contentEl.querySelector('#btn-reset').addEventListener('click', () => {

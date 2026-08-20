@@ -53,11 +53,35 @@ function migrateState() {
 export async function init() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (raw) {
-    try { state = JSON.parse(raw); migrateState(); return; }
-    catch (e) { console.warn('Dữ liệu lỗi, tạo lại dữ liệu mẫu.', e); }
+    try { state = JSON.parse(raw); migrateState(); }
+    catch (e) { console.warn('Dữ liệu lỗi, tạo lại dữ liệu mẫu.', e); await seedDemoData(); }
+  } else {
+    await seedDemoData();
   }
-  await seedDemoData();
+  // Thông tin quỹ tín dụng (org) là DUY NHẤT thứ cần hiện ra TRƯỚC khi đăng
+  // nhập (màn đăng nhập hiện tên quỹ) — nên tải thẳng từ Supabase ngay lúc
+  // khởi động app, không đợi tới lúc đăng nhập như customers/contracts. Bảng
+  // orgs cho phép SELECT công khai (không nhạy cảm — banner + số tài khoản
+  // ngân hàng vốn phải công khai để khách chuyển khoản), chỉ cần anon key.
+  await loadOrgPublic();
   persist();
+}
+
+async function loadOrgPublic() {
+  try {
+    const sb = getSupabaseClient();
+    const { data } = await sb.from('orgs').select('*').limit(1).maybeSingle();
+    if (data) state.org = mapOrgRow(data);
+  } catch (e) {
+    console.warn('Không tải được thông tin quỹ tín dụng từ Supabase, tạm dùng dữ liệu demo.', e);
+  }
+}
+function mapOrgRow(row) {
+  return {
+    id: row.id, name: row.name, shortName: row.short_name, hotline: row.hotline, address: row.address,
+    bannerEnabled: !!row.banner_enabled, bannerTitle: row.banner_title || '', bannerText: row.banner_text || '',
+    bankBin: row.bank_bin || '', bankName: row.bank_name || '', bankAccountNo: row.bank_account_no || '', bankAccountName: row.bank_account_name || '',
+  };
 }
 
 export async function resetDemoData() {
@@ -96,7 +120,22 @@ async function verifyCredential(plainPassword, salt, hash) {
 // Tổ chức (thông tin quỹ tín dụng, banner) — admin chỉnh trực tiếp trong app
 // ------------------------------------------------------------
 export function getOrg() { return state.org; }
-export function updateOrg(patch) { Object.assign(state.org, patch); notify(); }
+/** Sửa thông tin quỹ tín dụng (banner/ngân hàng...) — ĐÃ CHUYỂN SANG SUPABASE THẬT, ghi thẳng qua RLS (chỉ admin role='super' được phép, xem policy trong docs). */
+export async function updateOrg(patch) {
+  const session = getSession();
+  const sb = getSupabaseClient(session?.sbToken);
+  const dbPatch = {};
+  const map = {
+    name: 'name', shortName: 'short_name', hotline: 'hotline', address: 'address',
+    bannerEnabled: 'banner_enabled', bannerTitle: 'banner_title', bannerText: 'banner_text',
+    bankBin: 'bank_bin', bankName: 'bank_name', bankAccountNo: 'bank_account_no', bankAccountName: 'bank_account_name',
+  };
+  for (const [k, col] of Object.entries(map)) if (patch[k] !== undefined) dbPatch[col] = patch[k];
+  const { error } = await sb.from('orgs').update(dbPatch).eq('id', state.org.id);
+  if (error) throw new Error('Không lưu được cài đặt, thử lại sau.');
+  Object.assign(state.org, patch);
+  notify();
+}
 
 // ------------------------------------------------------------
 // Tách địa chỉ dạng "Xóm 01, thôn Bình Nguyên, xã Bình Sơn, tỉnh Quảng Ngãi"
