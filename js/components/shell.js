@@ -28,7 +28,6 @@ function matchPath(navPath, current) {
 export function buildShell(root, role, isSuper) {
   const nav = role === 'admin' ? [...ADMIN_NAV, ...(isSuper ? ADMIN_NAV_SUPER_ONLY : [])] : CUSTOMER_NAV;
   root.innerHTML = `
-    <div class="demo-ribbon">BẢN DEMO — dữ liệu giả, chưa kết nối hệ thống thật, không dùng để giao dịch thật</div>
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-brand">

@@ -1,7 +1,7 @@
 {
-  "name": "Quỹ Tín Dụng Nhân Dân Bình Nguyên - Cổng khách hàng (DEMO)",
+  "name": "Quỹ Tín Dụng Nhân Dân Bình Nguyên - Cổng khách hàng",
   "short_name": "QTD Bình Nguyên",
-  "description": "BẢN DEMO — cổng tra cứu khoản vay & yêu cầu tư vấn. Dữ liệu minh họa, chưa kết nối hệ thống thật.",
+  "description": "Cổng tra cứu khoản vay & yêu cầu tư vấn.",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#f2f5f4",

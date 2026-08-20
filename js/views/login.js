@@ -7,7 +7,6 @@ let mode = 'customer';
 export function renderLogin(root, onLoggedIn) {
   const org = S.getOrg();
   root.innerHTML = `
-    <div class="demo-ribbon">BẢN DEMO — dữ liệu giả, chưa kết nối hệ thống thật</div>
     <div class="login-wrap">
       <div class="login-card">
         <div class="logo-mark">${icon('landmark', 'icon-lg')}</div>
@@ -31,11 +30,6 @@ export function renderLogin(root, onLoggedIn) {
           <div class="field-error" id="login-error" style="display:none;margin-bottom:10px"></div>
           <button class="btn btn-primary btn-block" type="submit">${icon('lock', 'icon-sm')} Đăng nhập</button>
         </form>
-
-        <div class="card card-pad mt-16" style="background:var(--surface-alt);border-style:dashed" id="demo-hint">
-          <div class="text-sm fw-700 mb-8">Tài khoản dùng thử (demo)</div>
-          <div class="text-sm text-muted" id="demo-hint-body"></div>
-        </div>
       </div>
     </div>
   `;
@@ -46,9 +40,6 @@ export function renderLogin(root, onLoggedIn) {
     root.querySelector('#label-primary').textContent = isAdmin ? 'Tên đăng nhập' : 'Số CCCD hoặc SĐT';
     root.querySelector('#input-primary').placeholder = isAdmin ? 'Nhập tên đăng nhập quản trị' : 'Nhập số CCCD hoặc SĐT của bạn';
     root.querySelector('#input-primary').inputMode = isAdmin ? 'text' : 'numeric';
-    root.querySelector('#demo-hint-body').innerHTML = isAdmin
-      ? `Quản trị viên (toàn quyền): <b>admin</b> / <b>Admin@123</b><br/>Nhân viên (chỉ xem, giới hạn Thôn 1): <b>nhanvien1</b> / <b>Staff@123</b>`
-      : `Số CCCD hoặc SĐT: <b>079300012345</b> hoặc <b>0901 000 001</b><br/>Mật khẩu: <b>Demo@123</b><br/><span class="text-faint">(sẽ yêu cầu đổi mật khẩu ngay lần đầu đăng nhập)</span>`;
   }
   updateMode();
 

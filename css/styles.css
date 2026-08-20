@@ -482,12 +482,6 @@ svg { display: block; }
   .grid-4 { grid-template-columns: 1fr 1fr; }
 }
 
-.demo-ribbon {
-  background: #7a1f1a; color: #fff; text-align: center;
-  font-size: 11.5px; font-weight: 700; padding: 6px 10px;
-  position: sticky; top: 0; z-index: 50; letter-spacing: .01em;
-}
-
 .login-wrap {
   min-height: 100vh; display: flex; align-items: center; justify-content: center;
   background: linear-gradient(160deg, #0f6f61 0%, #0a2e28 100%);

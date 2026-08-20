@@ -4,7 +4,6 @@ import { toast } from '../components/toast.js';
 
 export function renderChangePassword(root, customerId, onDone, opts = {}) {
   root.innerHTML = `
-    <div class="demo-ribbon">BẢN DEMO — dữ liệu giả, chưa kết nối hệ thống thật</div>
     <div class="login-wrap">
       <div class="login-card">
         <div class="logo-mark">${icon('shieldCheck', 'icon-lg')}</div>
