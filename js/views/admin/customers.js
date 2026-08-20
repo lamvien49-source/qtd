@@ -322,14 +322,20 @@ export function openCustomerDetail(customerId, { readOnly = false, context = 'cu
           confirmDialog({
             title: 'Xóa Use?', message: `Gỡ tài khoản đăng nhập của "${c.name}"? Hồ sơ và hợp đồng vẫn được giữ nguyên bên Khách hàng & Hợp đồng — có thể "Tạo User" lại bất cứ lúc nào.`,
             confirmLabel: 'Xóa Use', danger: true,
-            onConfirm: () => { S.deactivateCustomerAccount(customerId); closeFn(); toast('Đã xóa Use (hồ sơ/hợp đồng vẫn còn)', 'success'); },
+            onConfirm: async () => {
+              try { await S.deactivateCustomerAccount(customerId); closeFn(); toast('Đã xóa Use (hồ sơ/hợp đồng vẫn còn)', 'success'); }
+              catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
+            },
           });
           return;
         }
         confirmDialog({
           title: 'Xóa khách hàng?', message: `Xóa "${c.name}" và toàn bộ hợp đồng liên quan?`,
           confirmLabel: 'Xóa', danger: true,
-          onConfirm: () => { S.deleteCustomer(customerId); closeFn(); toast('Đã xóa khách hàng', 'success'); window.__qtdRedrawCustomers?.(); },
+          onConfirm: async () => {
+            try { await S.deleteCustomer(customerId); closeFn(); toast('Đã xóa khách hàng', 'success'); window.__qtdRedrawCustomers?.(); }
+            catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
+          },
         });
       });
     },
@@ -463,7 +469,10 @@ export function openContractView(customerId, contract, { readOnly = false } = {}
         confirmDialog({
           title: 'Xóa hợp đồng?', message: `Xóa hợp đồng ${contract.code}? Nếu hợp đồng vẫn còn trong file Excel, lần nhập sau sẽ tạo lại.`,
           confirmLabel: 'Xóa', danger: true,
-          onConfirm: () => { S.deleteContract(contract.id); closeFn(); toast('Đã xóa hợp đồng', 'success'); window.__qtdRedrawCustomers?.(); },
+          onConfirm: async () => {
+            try { await S.deleteContract(contract.id); closeFn(); toast('Đã xóa hợp đồng', 'success'); window.__qtdRedrawCustomers?.(); }
+            catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
+          },
         });
       });
     },

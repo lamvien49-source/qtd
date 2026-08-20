@@ -291,10 +291,15 @@ export async function setCustomerPassword(customerId, newPassword, opts = {}) {
 }
 
 /** Admin cấp lại mật khẩu cho khách — có thể tự nhập mật khẩu cụ thể, để trống thì tự sinh ngẫu nhiên. */
+/** Admin cấp lại mật khẩu cho khách hàng — ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function "create-account". */
 export async function adminResetCustomerPassword(customerId, customPassword) {
-  const temp = customPassword && customPassword.trim() ? customPassword.trim() : genTempPassword();
-  await setCustomerPassword(customerId, temp, { mustChangePassword: true });
-  return temp;
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'reset-customer-password', customerId, password: customPassword });
+  if (!res.ok) throw new Error(res.reason || 'Không cấp lại được mật khẩu.');
+  const c = getCustomer(customerId);
+  if (c) { c.mustChangePassword = true; c.failedAttempts = 0; c.lockedUntil = null; }
+  notify();
+  return res.tempPassword;
 }
 
 /**
@@ -368,11 +373,13 @@ export async function activateCustomerAccount({ cccd, name, phone, password }) {
  * nhập. Khách trở lại trạng thái "chỉ có hồ sơ" như mới nhập từ Excel, admin
  * có thể "Tạo User" lại bất cứ lúc nào mà không mất dữ liệu hợp đồng.
  */
-export function deactivateCustomerAccount(customerId) {
+/** "Xóa Use" — ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function "create-account". */
+export async function deactivateCustomerAccount(customerId) {
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'deactivate-customer', customerId });
+  if (!res.ok) throw new Error(res.reason || 'Không xóa được Use.');
   const c = getCustomer(customerId);
-  if (!c) return;
-  c.salt = null; c.hash = null; c.mustChangePassword = false; c.tempPassword = null;
-  c.failedAttempts = 0; c.lockedUntil = null;
+  if (c) { c.salt = null; c.hash = null; c.mustChangePassword = false; c.tempPassword = null; c.failedAttempts = 0; c.lockedUntil = null; }
   notify();
 }
 
@@ -439,14 +446,22 @@ export function upsertContract(args) {
   return ct;
 }
 
-export function deleteCustomer(id) {
+/** ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function "create-account" — hợp đồng tự xóa theo (FK cascade). */
+export async function deleteCustomer(id) {
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'delete-customer', customerId: id });
+  if (!res.ok) throw new Error(res.reason || 'Không xóa được khách hàng.');
   state.customers = state.customers.filter((c) => c.id !== id);
   state.contracts = state.contracts.filter((c) => c.customerId !== id);
   notify();
 }
-export function deleteContract(id) {
+/** ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function "create-account". */
+export async function deleteContract(id) {
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'delete-contract', contractId: id });
+  if (!res.ok) throw new Error(res.reason || 'Không xóa được hợp đồng.');
   state.contracts = state.contracts.filter((c) => c.id !== id);
-  pruneEmptyCustomerProfiles(); // hết hợp đồng mà chưa có tài khoản Use thì dọn luôn hồ sơ
+  pruneEmptyCustomerProfiles(); // hết hợp đồng mà chưa có tài khoản Use thì dọn luôn hồ sơ (chỉ ở local cache)
   notify();
 }
 
@@ -649,23 +664,27 @@ export async function addStaffAdmin({ username, name, password, role, allowedTho
   notify();
   return { staff, tempPassword: res.tempPassword };
 }
-export function updateStaffPermissions(id, allowedThon, allowedXom) {
+/** ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function "create-account". */
+export async function updateStaffPermissions(id, allowedThon, allowedXom) {
   const a = getAdmin(id);
   if (!a || a.role !== 'staff') return;
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'update-staff-permissions', staffId: id, allowedThon, allowedXom });
+  if (!res.ok) throw new Error(res.reason || 'Không cập nhật được quyền xem.');
   a.allowedThon = Array.isArray(allowedThon) ? allowedThon : [];
   a.allowedXom = Array.isArray(allowedXom) ? allowedXom : [];
   notify();
 }
 /** Cấp lại mật khẩu cho quản trị viên/nhân viên — có thể tự nhập mật khẩu cụ thể, để trống thì tự sinh ngẫu nhiên. */
+/** ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function "create-account". */
 export async function resetStaffPassword(id, customPassword) {
   const a = getAdmin(id);
   if (!a) throw new Error('Không tìm thấy tài khoản');
-  const temp = customPassword && customPassword.trim() ? customPassword.trim() : genTempPassword();
-  const cred = await makeCredential(temp);
-  a.salt = cred.salt;
-  a.hash = cred.hash;
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'reset-staff-password', staffId: id, password: customPassword });
+  if (!res.ok) throw new Error(res.reason || 'Không cấp lại được mật khẩu.');
   notify();
-  return temp;
+  return res.tempPassword;
 }
 /** Kiểm tra mật khẩu hiện tại của quản trị viên/nhân viên — dùng cho màn tự đổi mật khẩu. */
 export async function verifyAdminPassword(id, password) {
@@ -683,10 +702,13 @@ export async function setStaffPassword(id, newPassword) {
   a.hash = cred.hash;
   notify();
 }
-export function deleteStaffAdmin(id) {
+/** ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function "create-account" (server tự kiểm tra giữ lại ít nhất 1 super admin). */
+export async function deleteStaffAdmin(id) {
   const a = getAdmin(id);
   if (!a) return;
-  if (a.role === 'super' && state.admins.filter((x) => x.role === 'super').length <= 1) return; // luôn giữ lại ít nhất 1 quản trị viên toàn quyền
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'delete-staff', staffId: id });
+  if (!res.ok) throw new Error(res.reason || 'Không xóa được tài khoản.');
   state.admins = state.admins.filter((x) => x.id !== id);
   notify();
 }

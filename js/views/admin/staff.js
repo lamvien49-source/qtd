@@ -199,12 +199,14 @@ function openAdminDetail(admin, tree, contentEl) {
     onMount(sheet, closeFn) {
       bindPermissionTreeChips(sheet);
       const saveBtn = sheet.querySelector('#btn-save-perm');
-      if (saveBtn) saveBtn.addEventListener('click', () => {
+      if (saveBtn) saveBtn.addEventListener('click', async () => {
         const fd = new FormData(sheet.querySelector('#perm-form'));
-        S.updateStaffPermissions(admin.id, fd.getAll('thon'), fd.getAll('xom'));
-        toast('Đã cập nhật quyền xem', 'success');
-        closeFn();
-        draw(contentEl);
+        try {
+          await S.updateStaffPermissions(admin.id, fd.getAll('thon'), fd.getAll('xom'));
+          toast('Đã cập nhật quyền xem', 'success');
+          closeFn();
+          draw(contentEl);
+        } catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
       });
       sheet.querySelector('#btn-reset-pw').addEventListener('click', () => {
         openResetPasswordModal({
@@ -221,11 +223,13 @@ function openAdminDetail(admin, tree, contentEl) {
         confirmDialog({
           title: 'Xóa quản trị viên?', message: `Xóa tài khoản "${admin.name}" (@${admin.username})?`,
           confirmLabel: 'Xóa', danger: true,
-          onConfirm: () => {
-            S.deleteStaffAdmin(admin.id);
-            closeFn();
-            toast('Đã xóa quản trị viên', 'success');
-            draw(contentEl);
+          onConfirm: async () => {
+            try {
+              await S.deleteStaffAdmin(admin.id);
+              closeFn();
+              toast('Đã xóa quản trị viên', 'success');
+              draw(contentEl);
+            } catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
           },
         });
       });

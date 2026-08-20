@@ -6,9 +6,16 @@
 // tự khai — y hệt tinh thần của Edge Function "login".
 //
 // Cách gọi: header Authorization: Bearer <JWT do Edge Function "login" cấp
-// cho 1 admin role=super>. Body:
-//   { type: 'customer', cccd, name?, phone?, password? }
-//   { type: 'staff', username, name?, password?, role, allowedThon?, allowedXom? }
+// cho 1 admin role=super>. Body — 1 trong các dạng sau (field "type"):
+//   { type: 'customer', cccd, name?, phone?, password? }               tạo/cấp User khách hàng
+//   { type: 'staff', username, name?, password?, role, allowedThon?, allowedXom? }  tạo quản trị/nhân viên
+//   { type: 'reset-customer-password', customerId, password? }         cấp lại mật khẩu khách hàng
+//   { type: 'deactivate-customer', customerId }                        "Xóa Use" (giữ hồ sơ/hợp đồng)
+//   { type: 'delete-customer', customerId }                            xóa hẳn khách hàng + hợp đồng
+//   { type: 'delete-contract', contractId }                            xóa 1 hợp đồng
+//   { type: 'reset-staff-password', staffId, password? }               cấp lại mật khẩu quản trị/nhân viên
+//   { type: 'update-staff-permissions', staffId, allowedThon?, allowedXom? }  sửa phân quyền Thôn/Xóm
+//   { type: 'delete-staff', staffId }                                  xóa quản trị/nhân viên
 // password bỏ trống thì tự sinh mật khẩu tạm ngẫu nhiên (trả về trong response).
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -154,5 +161,80 @@ Deno.serve(async (req) => {
     return json({ ok: true, id: staffId, tempPassword: finalPassword });
   }
 
-  return json({ ok: false, reason: 'Thiếu hoặc sai "type" (phải là "customer" hoặc "staff").' }, 400);
+  if (body.type === 'reset-customer-password') {
+    const customerId = String(body.customerId || '').trim();
+    if (!customerId) return json({ ok: false, reason: 'Thiếu mã khách hàng.' }, 400);
+    const finalPassword = body.password && String(body.password).trim() ? String(body.password).trim() : genTempPassword();
+    const cred = await makeCredential(finalPassword);
+    const { error } = await admin.from('customers').update({
+      ...cred, must_change_password: true, failed_attempts: 0, locked_until: null,
+    }).eq('id', customerId);
+    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    return json({ ok: true, tempPassword: finalPassword });
+  }
+
+  if (body.type === 'deactivate-customer') {
+    const customerId = String(body.customerId || '').trim();
+    if (!customerId) return json({ ok: false, reason: 'Thiếu mã khách hàng.' }, 400);
+    const { error } = await admin.from('customers').update({
+      salt: null, hash: null, must_change_password: false, failed_attempts: 0, locked_until: null,
+    }).eq('id', customerId);
+    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    return json({ ok: true });
+  }
+
+  if (body.type === 'delete-customer') {
+    const customerId = String(body.customerId || '').trim();
+    if (!customerId) return json({ ok: false, reason: 'Thiếu mã khách hàng.' }, 400);
+    // Hợp đồng tự xóa theo (foreign key "on delete cascade" khi tạo bảng contracts).
+    const { error } = await admin.from('customers').delete().eq('id', customerId);
+    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    return json({ ok: true });
+  }
+
+  if (body.type === 'delete-contract') {
+    const contractId = String(body.contractId || '').trim();
+    if (!contractId) return json({ ok: false, reason: 'Thiếu mã hợp đồng.' }, 400);
+    const { error } = await admin.from('contracts').delete().eq('id', contractId);
+    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    return json({ ok: true });
+  }
+
+  if (body.type === 'reset-staff-password') {
+    const staffId = String(body.staffId || '').trim();
+    if (!staffId) return json({ ok: false, reason: 'Thiếu mã tài khoản.' }, 400);
+    const finalPassword = body.password && String(body.password).trim() ? String(body.password).trim() : genTempPassword();
+    const cred = await makeCredential(finalPassword);
+    const { error } = await admin.from('admins').update(cred).eq('id', staffId);
+    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    return json({ ok: true, tempPassword: finalPassword });
+  }
+
+  if (body.type === 'update-staff-permissions') {
+    const staffId = String(body.staffId || '').trim();
+    if (!staffId) return json({ ok: false, reason: 'Thiếu mã tài khoản.' }, 400);
+    const { error } = await admin.from('admins').update({
+      allowed_thon: Array.isArray(body.allowedThon) ? body.allowedThon : [],
+      allowed_xom: Array.isArray(body.allowedXom) ? body.allowedXom : [],
+    }).eq('id', staffId).eq('role', 'staff'); // chỉ áp dụng cho nhân viên, giống hệt kiểm tra cũ ở client
+    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    return json({ ok: true });
+  }
+
+  if (body.type === 'delete-staff') {
+    const staffId = String(body.staffId || '').trim();
+    if (!staffId) return json({ ok: false, reason: 'Thiếu mã tài khoản.' }, 400);
+    const { data: target } = await admin.from('admins').select('role').eq('id', staffId).maybeSingle();
+    if (target && target.role === 'super') {
+      const { count } = await admin.from('admins').select('id', { count: 'exact', head: true }).eq('role', 'super');
+      if ((count || 0) <= 1) {
+        return json({ ok: false, reason: 'Phải giữ lại ít nhất 1 quản trị viên toàn quyền.' }, 409);
+      }
+    }
+    const { error } = await admin.from('admins').delete().eq('id', staffId);
+    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    return json({ ok: true });
+  }
+
+  return json({ ok: false, reason: 'Thiếu hoặc sai "type".' }, 400);
 });
