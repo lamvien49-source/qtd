@@ -128,6 +128,19 @@ Policy cụ thể phụ thuộc vào việc bạn chọn **phương án xác th�
 Supabase dựa vào `auth.uid()` (người dùng đã đăng nhập qua Supabase Auth), nên cần map được
 `auth_user_id` → đúng customer/admin tương ứng trước khi viết policy chi tiết.
 
+> Nếu lúc tạo project bạn đã **bỏ tick "Automatically expose new tables"** (khuyến nghị, an toàn
+> hơn) thì cần chạy thêm đoạn cấp quyền sau — thiếu bước này thì dù RLS/policy đúng, API vẫn không
+> gọi được vào bảng (không có quyền ở tầng bảng, chưa tới lượt RLS xét từng dòng):
+
+```sql
+grant usage on schema public to anon, authenticated;
+grant select, insert, update, delete on orgs, admins, customers, contracts, requests
+  to anon, authenticated;
+```
+
+*(Cấp quyền ở tầng bảng cho phép API "được thử" truy vấn; RLS + policy phía trên mới là lớp quyết
+định thật sự lọc được đúng dòng nào — 2 lớp này bổ sung cho nhau, không lớp nào thay được lớp kia.)*
+
 ## 5. Xác thực (Auth) — điểm cần quyết định trước khi code
 
 App hiện tại **tự làm đăng nhập riêng** (CCCD/username + băm mật khẩu bằng `crypto.subtle` ngay
