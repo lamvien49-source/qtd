@@ -130,12 +130,14 @@ Supabase dựa vào `auth.uid()` (người dùng đã đăng nhập qua Supabase
 
 > Nếu lúc tạo project bạn đã **bỏ tick "Automatically expose new tables"** (khuyến nghị, an toàn
 > hơn) thì cần chạy thêm đoạn cấp quyền sau — thiếu bước này thì dù RLS/policy đúng, API vẫn không
-> gọi được vào bảng (không có quyền ở tầng bảng, chưa tới lượt RLS xét từng dòng):
+> gọi được vào bảng (không có quyền ở tầng bảng, chưa tới lượt RLS xét từng dòng). **Lưu ý đã xác
+> nhận qua thực tế**: `service_role` (Edge Function dùng) KHÔNG tự có quyền — chỉ tự động bỏ qua
+> RLS, vẫn cần GRANT như bình thường, nên phải cấp quyền cho cả 3 vai trò:
 
 ```sql
-grant usage on schema public to anon, authenticated;
+grant usage on schema public to anon, authenticated, service_role;
 grant select, insert, update, delete on orgs, admins, customers, contracts, requests
-  to anon, authenticated;
+  to anon, authenticated, service_role;
 ```
 
 *(Cấp quyền ở tầng bảng cho phép API "được thử" truy vấn; RLS + policy phía trên mới là lớp quyết
