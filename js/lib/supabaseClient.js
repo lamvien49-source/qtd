@@ -15,6 +15,9 @@ export const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiO
 // .../clever-processor vì lúc tạo qua "Via Editor" không đổi được slug).
 export const LOGIN_FN_URL = 'https://amwiyxhawueqlmnzkdls.supabase.co/functions/v1/clever-processor';
 export const CREATE_ACCOUNT_FN_URL = 'https://amwiyxhawueqlmnzkdls.supabase.co/functions/v1/create-account';
+// TODO: cập nhật đúng URL thật sau khi deploy function "import-data" (xem
+// ghi chú ở LOGIN_FN_URL — tên hiển thị trên Dashboard có thể khác URL thật).
+export const IMPORT_DATA_FN_URL = 'https://amwiyxhawueqlmnzkdls.supabase.co/functions/v1/import-data';
 
 /**
  * Tạo 1 Supabase client — nếu có JWT riêng (do function "login" cấp sau khi
@@ -47,6 +50,20 @@ export async function callLoginFunction({ role, identifier, password }) {
 export async function callCreateAccountFunction(adminJwt, payload) {
   try {
     const res = await fetch(CREATE_ACCOUNT_FN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${adminJwt}` },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (e) {
+    return { ok: false, reason: 'Không kết nối được máy chủ, kiểm tra lại mạng và thử lại.' };
+  }
+}
+
+/** Gọi Edge Function "import-data" (nhập Excel/dán tay) — cần JWT của admin role='super'. */
+export async function callImportDataFunction(adminJwt, payload) {
+  try {
+    const res = await fetch(IMPORT_DATA_FN_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${adminJwt}` },
       body: JSON.stringify(payload),

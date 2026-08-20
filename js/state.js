@@ -5,7 +5,7 @@
 // Toàn bộ dữ liệu khách hàng trong file này là dữ liệu GIẢ.
 // ============================================================
 import { genId, mulberry32, randInt, addDays, daysBetween } from './utils.js';
-import { getSupabaseClient, callLoginFunction, callCreateAccountFunction } from './lib/supabaseClient.js';
+import { getSupabaseClient, callLoginFunction, callCreateAccountFunction, callImportDataFunction } from './lib/supabaseClient.js';
 
 export const STORAGE_KEY = 'qtd_demo_v3';
 
@@ -335,10 +335,19 @@ function upsertCustomerProfileCore({ cccd, name, phone, address }, existing) {
   state.customers.push(c);
   return { customer: c, isNew: true };
 }
-export function upsertCustomerProfile(args) {
-  const result = upsertCustomerProfileCore(args);
+/** Admin sửa hồ sơ khách hàng (tên/SĐT/địa chỉ) — ĐÃ CHUYỂN SANG SUPABASE THẬT qua Edge Function "create-account". */
+export async function upsertCustomerProfile({ cccd, name, phone, address }) {
+  const session = getSession();
+  const res = await callCreateAccountFunction(session?.sbToken, { type: 'update-customer-profile', cccd, name, phone, address });
+  if (!res.ok) throw new Error(res.reason || 'Không cập nhật được hồ sơ.');
+  const c = findCustomerByCccd(cccd);
+  if (c) {
+    if (name) c.name = name;
+    if (phone) c.phone = String(phone).replace(/\s/g, '');
+    if (address) { c.address = address; Object.assign(c, parseAddress(address)); }
+  }
   notify();
-  return result;
+  return { customer: c };
 }
 
 /**
@@ -540,61 +549,56 @@ const HEADER_HINTS = ['cccd', 'cmnd', 'người nhận nợ', 'nguoi nhan no', '
  * khoản Use thì dọn luôn hồ sơ (xem pruneEmptyCustomerProfiles). Không bật
  * fullSync với kiểu dán tay (chỉ thêm/cập nhật, không xóa/dọn gì).
  */
+/**
+ * Nhập dữ liệu từ Excel/dán tay — ĐÃ CHUYỂN SANG SUPABASE THẬT. Trình duyệt
+ * chỉ còn lo tách cột + parse ngày/số (KHÔNG nhạy cảm, giữ nguyên logic cũ ở
+ * đây) — việc GHI vào database (đặc biệt tự tạo tài khoản cho khách hoàn
+ * toàn mới) chuyển hết sang Edge Function "import-data" (xem
+ * docs/supabase-migration.md), vì đó là hành động nhạy cảm cần xác minh
+ * đúng người gọi có quyền "super" tại server.
+ */
 export async function importFromPastedTable(text, { fullSync = false } = {}) {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const result = { newProfiles: 0, newAccounts: [], existingCustomers: 0, contracts: 0, deletedContracts: 0, deletedCustomers: 0, skipped: 0, errors: [] };
-  const touchedContractIds = new Set();
-  // Tra cứu bằng Map (thay vì .find() quét lại toàn bộ mảng mỗi dòng) + dùng
-  // bản "Core" không tự notify() từng dòng — cực kỳ quan trọng với file lớn
-  // (hàng trăm/nghìn dòng): notify() lưu localStorage + vẽ lại cả trang, gọi
-  // lặp lại mỗi dòng sẽ làm việc tải file chậm hẳn đi. Chỉ notify() 1 lần
-  // duy nhất sau khi xử lý xong toàn bộ file.
-  const customerByCccd = new Map(state.customers.map((c) => [c.cccd, c]));
-  const contractByCode = new Map(state.contracts.filter((c) => c.code).map((c) => [c.code, c]));
+  const rows = [];
+  let skipped = 0;
+  const parseErrors = [];
   for (const line of lines) {
     const cells = line.includes('\t') ? line.split('\t') : line.split(',');
-    if (cells.length < 2) { result.skipped++; continue; }
+    if (cells.length < 2) { skipped++; continue; }
     const headerCheck = cells.slice(0, 2).join(' ').toLowerCase();
     if (HEADER_HINTS.some((h) => headerCheck.includes(h))) continue; // bỏ qua dòng tiêu đề
 
     const [code, name, address, cccdRaw, phone, disbursedDate, dueDate, interestPaidUntil, principal, balance, interestRate] = cells.map((c) => c.trim());
     const cccd = (cccdRaw || '').replace(/\s/g, '');
-    if (!cccd || !/^\d{9,12}$/.test(cccd)) { result.errors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
-
-    const wasNew = !customerByCccd.has(cccd);
-    const { customer } = upsertCustomerProfileCore({ cccd, name, phone, address }, customerByCccd.get(cccd)); // luôn ghi đè hồ sơ theo dữ liệu mới nhất
-    if (wasNew) {
-      customerByCccd.set(cccd, customer);
-      result.newProfiles++;
-      const temp = genTempPassword();
-      const cred = await makeCredential(temp);
-      Object.assign(customer, cred, { mustChangePassword: true, tempPassword: temp, failedAttempts: 0, lockedUntil: null });
-      result.newAccounts.push({ name: customer.name, cccd: customer.cccd, tempPassword: temp });
-    } else {
-      result.existingCustomers++;
-    }
+    if (!cccd || !/^\d{9,12}$/.test(cccd)) { parseErrors.push(`Bỏ qua dòng (CCCD không hợp lệ): ${line.slice(0, 40)}...`); continue; }
 
     const disbursed = parseVNDate(disbursedDate) || new Date().toISOString().slice(0, 10);
-    const ct = upsertContractCore({
-      customerId: customer.id, code: code || null,
-      principal: principal ? parseVNNumber(principal) : null, disbursedDate: disbursed,
+    rows.push({
+      cccd, name, address, phone, code: code || null,
+      principal: principal ? parseVNNumber(principal) : null,
+      disbursedDate: disbursed,
       dueDate: dueDate ? parseVNDate(dueDate) : null,
       interestRate: interestRate ? parseVNNumber(interestRate) : null,
-      balance: parseVNNumber(balance), status: 'dang_vay',
-      interestPaidUntil: parseVNDate(interestPaidUntil) || disbursed,
-    }, code ? contractByCode.get(code) : null);
-    contractByCode.set(ct.code, ct);
-    touchedContractIds.add(ct.id);
-    result.contracts++;
+      balance: parseVNNumber(balance),
+      interestPaidUntil: parseVNDate(interestPaidUntil) || null,
+    });
   }
-  if (fullSync) {
-    const before = state.contracts.length;
-    state.contracts = state.contracts.filter((ct) => touchedContractIds.has(ct.id));
-    result.deletedContracts = before - state.contracts.length;
-    result.deletedCustomers = pruneEmptyCustomerProfiles();
-  }
-  notify(); // 1 lần duy nhất cho cả lần nhập, dù fullSync hay dán tay
-  return result;
+
+  const session = getSession();
+  const res = await callImportDataFunction(session?.sbToken, { rows, fullSync });
+  if (!res.ok) throw new Error(res.reason || 'Không nhập được dữ liệu.');
+
+  // Tải lại toàn bộ khách hàng/hợp đồng từ Supabase để đồng bộ đúng dữ liệu
+  // thật sau khi nhập — chắc chắn đúng hơn tự tính lại ở trình duyệt vì mọi
+  // quyết định thêm/sửa/xóa đều đã xảy ra ở server.
+  await loadAdminSessionData(session.sbToken);
+
+  return {
+    newProfiles: res.newProfiles || 0, existingCustomers: res.existingCustomers || 0, contracts: res.contracts || 0,
+    deletedContracts: res.deletedContracts || 0, deletedCustomers: res.deletedCustomers || 0,
+    skipped: skipped + (res.skipped || 0), errors: [...parseErrors, ...(res.errors || [])],
+    newAccounts: res.newAccounts || [],
+  };
 }
 
 // ------------------------------------------------------------

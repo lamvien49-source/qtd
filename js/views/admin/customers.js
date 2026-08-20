@@ -231,12 +231,14 @@ function openCustomerForm(customer) {
         if (!form.reportValidity()) return;
         const fd = new FormData(form);
         if (isEdit) {
-          S.upsertCustomerProfile({
-            cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), address: fd.get('address'),
-          });
-          closeFn();
-          toast('Đã cập nhật khách hàng', 'success');
-          window.__qtdRedrawCustomers && window.__qtdRedrawCustomers();
+          try {
+            await S.upsertCustomerProfile({
+              cccd: fd.get('cccd'), name: fd.get('name'), phone: fd.get('phone'), address: fd.get('address'),
+            });
+            closeFn();
+            toast('Đã cập nhật khách hàng', 'success');
+            window.__qtdRedrawCustomers && window.__qtdRedrawCustomers();
+          } catch (err) { toast(err.message || 'Có lỗi xảy ra', 'error'); }
           return;
         }
         try {

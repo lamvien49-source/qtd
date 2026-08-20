@@ -9,6 +9,7 @@
 // cho 1 admin role=super>. Body — 1 trong các dạng sau (field "type"):
 //   { type: 'customer', cccd, name?, phone?, password? }               tạo/cấp User khách hàng
 //   { type: 'staff', username, name?, password?, role, allowedThon?, allowedXom? }  tạo quản trị/nhân viên
+//   { type: 'update-customer-profile', cccd, name?, phone?, address? }  sửa hồ sơ khách hàng (không đụng tài khoản)
 //   { type: 'reset-customer-password', customerId, password? }         cấp lại mật khẩu khách hàng
 //   { type: 'deactivate-customer', customerId }                        "Xóa Use" (giữ hồ sơ/hợp đồng)
 //   { type: 'delete-customer', customerId }                            xóa hẳn khách hàng + hợp đồng
@@ -159,6 +160,38 @@ Deno.serve(async (req) => {
     if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
 
     return json({ ok: true, id: staffId, tempPassword: finalPassword });
+  }
+
+  if (body.type === 'update-customer-profile') {
+    const cccd = String(body.cccd || '').trim();
+    if (!cccd) return json({ ok: false, reason: 'Cần nhập số CCCD.' }, 400);
+    const patch: Record<string, unknown> = {};
+    if (body.name) patch.name = body.name;
+    if (body.phone) patch.phone = String(body.phone).replace(/\s/g, '');
+    if (body.address) {
+      patch.address = body.address;
+      const text = String(body.address).trim();
+      const withoutNote = text.replace(/\([^)]*\)/g, '');
+      const parts = withoutNote.split(',').map((s: string) => s.trim()).filter(Boolean);
+      const addr = { xom: '', thon: '', xa: '', tinh: '' } as Record<string, string>;
+      const rest: string[] = [];
+      for (const p of parts) {
+        const low = p.toLowerCase();
+        if (low.startsWith('xóm') || low.startsWith('xom')) addr.xom = p;
+        else if (low.startsWith('thôn') || low.startsWith('thon')) addr.thon = p;
+        else if (low.startsWith('xã') || low.startsWith('xa ') || low.startsWith('phường') || low.startsWith('thị trấn') || low.startsWith('huyện')) addr.xa = p;
+        else if (low.startsWith('tỉnh') || low.startsWith('tp') || low.startsWith('thành phố')) addr.tinh = p;
+        else rest.push(p);
+      }
+      if (!addr.tinh && parts.length) addr.tinh = parts[parts.length - 1];
+      if (!addr.xa && rest.length) addr.xa = rest.shift()!;
+      if (!addr.thon && parts.length >= 2) addr.thon = parts[1];
+      if (!addr.xom && parts.length >= 1) addr.xom = parts[0];
+      Object.assign(patch, addr);
+    }
+    const { error } = await admin.from('customers').update(patch).eq('cccd', cccd);
+    if (error) return json({ ok: false, reason: 'Lỗi hệ thống, thử lại sau.' }, 500);
+    return json({ ok: true });
   }
 
   if (body.type === 'reset-customer-password') {
